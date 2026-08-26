@@ -1,0 +1,11 @@
+# ML / data pipeline — install after core: pip install -r requirements-ml.txt
+-r requirements.txt
+torch>=2.4.0
+faiss-cpu>=1.9.0
+transformers>=4.46.0
+pillow>=11.0.0
+ftfy>=6.3.0
+regex>=2024.0.0
+tqdm>=4.67.0
+scikit-learn>=1.5.0
+lightgbm>=4.5.0
