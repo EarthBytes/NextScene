@@ -12,3 +12,4 @@ numpy>=1.26.0
 python-dotenv>=1.0.0
 prometheus-client>=0.21.0
 structlog>=24.4.0
+pgvector>=0.3.0
