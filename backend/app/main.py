@@ -10,7 +10,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.include_router(health.router, tags=["health"])
+app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(recommendations.router, prefix="/api", tags=["recommendations"])
 
 metrics_app = make_asgi_app()
