@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     transformer_model_path: str = "models/transformer"
     ranking_model_path: str = "models/ranking"
     faiss_index_path: str = "data/faiss/items.index"
+    posters_dir: str = "data/posters"
     enable_explainability: bool = True
     enable_fallback_recs: bool = True
     api_host: str = "0.0.0.0"
