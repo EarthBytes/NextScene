@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://recsys:recsys@localhost:5432/recsys"
     omdb_api_key: str = ""
+    tmdb_api_key: str = ""
     transformer_model_path: str = "models/transformer"
     ranking_model_path: str = "models/ranking"
     faiss_index_path: str = "data/faiss/items.index"

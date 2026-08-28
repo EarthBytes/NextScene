@@ -20,6 +20,7 @@ out/
 data/movielens/*.csv
 data/movielens/*.zip
 data/imdb/
+data/imdb/*.gz
 data/posters/
 data/embeddings/
 data/faiss/

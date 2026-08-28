@@ -1,4 +1,4 @@
-"""Fetch IMDb metadata via OMDb API and enrich items table."""
+"""Fetch plot and poster metadata from TMDb."""
 
 import argparse
 import sys
@@ -13,7 +13,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import settings
 from app.db.session import SessionLocal
-from app.services.omdb_metadata import run_metadata_fetch
+from app.services.tmdb_metadata import count_remaining, run_tmdb_fetch
 
 
 def check_database(session) -> None:
@@ -25,26 +25,13 @@ def check_database(session) -> None:
         raise SystemExit(1)
 
 
-def count_remaining(session) -> int:
-    return session.execute(
-        text(
-            """
-            SELECT COUNT(*)
-            FROM items
-            WHERE imdb_id IS NOT NULL
-              AND (description IS NULL OR image_url IS NULL)
-            """
-        )
-    ).scalar_one()
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fetch IMDb metadata via OMDb")
+    parser = argparse.ArgumentParser(description="Fetch plot and posters from TMDb")
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
-        help="Max items to fetch this run (free tier: ~1,000/day)",
+        default=None,
+        help="Max items to fetch (default: all needing metadata)",
     )
     parser.add_argument(
         "--force",
@@ -54,21 +41,21 @@ def main() -> int:
     parser.add_argument(
         "--delay",
         type=float,
-        default=0.25,
-        help="Seconds to wait between API requests",
+        default=0.26,
+        help="Seconds between requests (~4/sec, under TMDb rate limits)",
     )
     args = parser.parse_args()
 
-    api_key = settings.omdb_api_key
+    api_key = settings.tmdb_api_key
     if not api_key:
-        print("Set OMDB_API_KEY in .env. Get a key at http://www.omdbapi.com/")
+        print("Set TMDB_API_KEY in .env. Get a key at https://www.themoviedb.org/settings/api")
         return 1
 
     session = SessionLocal()
     try:
         check_database(session)
-        print(f"Fetching OMDb metadata (limit={args.limit}) ...")
-        counts = run_metadata_fetch(
+        print("Fetching TMDb metadata ...")
+        counts = run_tmdb_fetch(
             session,
             api_key=api_key,
             limit=args.limit,
@@ -84,9 +71,6 @@ def main() -> int:
 
     if not args.force:
         print(f"  remaining_without_metadata: {remaining:,}")
-
-    if remaining > 0 and not args.force:
-        print("Free OMDb tier allows ~1,000 requests/day — re-run daily until remaining is 0.")
 
     print("Done.")
     return 0

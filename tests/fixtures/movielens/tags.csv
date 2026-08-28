@@ -1,0 +1,4 @@
+userId,movieId,tag,timestamp
+1,880001,pixar,1000000000
+1,880001,animation,1000000100
+2,880002,adventure,1000000200
