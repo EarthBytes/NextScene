@@ -73,7 +73,7 @@ def main() -> int:
     if not args.force:
         print(f"  remaining_without_poster: {remaining:,}")
 
-    print("Done.")
+    print("Done. Next: python scripts/generate_clip_embeddings.py")
     return 0
 
 

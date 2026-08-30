@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ranking_model_path: str = "models/ranking"
     faiss_index_path: str = "data/faiss/items.index"
     posters_dir: str = "data/posters"
+    clip_model_name: str = "openai/clip-vit-base-patch32"
     enable_explainability: bool = True
     enable_fallback_recs: bool = True
     api_host: str = "0.0.0.0"
