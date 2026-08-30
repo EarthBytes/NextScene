@@ -72,7 +72,7 @@ def main() -> int:
     for key, value in counts.items():
         print(f"  {key}: {value:,}")
 
-    print("Done. Next: python scripts/fetch_tmdb_metadata.py")
+    print("Done.")
     return 0
 
 
