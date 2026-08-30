@@ -48,3 +48,8 @@ checkpoints/
 # Logs
 logs/
 *.log
+
+# MD Files
+README.md
+DATASET.md
+PLAN.md
