@@ -49,6 +49,9 @@ checkpoints/
 logs/
 *.log
 
+# Reports
+reports
+
 # MD Files
 README.md
 DATASET.md
