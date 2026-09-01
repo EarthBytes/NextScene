@@ -66,6 +66,7 @@ def normalize_vectors(vectors: np.ndarray) -> np.ndarray:
 
 
 def build_faiss_index(vectors: np.ndarray):
+    import app.ml_runtime  # noqa: F401
     import faiss
 
     if vectors.ndim != 2 or vectors.shape[1] != EMBEDDING_DIM:
@@ -104,6 +105,7 @@ def save_faiss_index(
 
 
 def load_faiss_index(index_path: Path):
+    import app.ml_runtime  # noqa: F401
     import faiss
 
     ids_path = ids_path_for_index(index_path)

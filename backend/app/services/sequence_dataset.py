@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import torch
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 from torch.utils.data import DataLoader, Dataset
 
@@ -86,6 +87,25 @@ class ItemEmbeddingTable:
         return self.vectors[index]
 
 
+def _sample_to_batch_tensors(
+    history: Sequence[int],
+    target_item_id: int,
+    max_seq_len: int,
+) -> dict[str, torch.Tensor]:
+    clipped = list(history[-max_seq_len:])
+    padded = torch.full((max_seq_len,), PAD_ITEM_ID, dtype=torch.long)
+    mask = torch.zeros(max_seq_len, dtype=torch.bool)
+    length = len(clipped)
+    if length:
+        padded[:length] = torch.tensor(clipped, dtype=torch.long)
+        mask[:length] = True
+    return {
+        "input_item_ids": padded,
+        "input_mask": mask,
+        "target_item_id": torch.tensor(target_item_id, dtype=torch.long),
+    }
+
+
 class SequenceDataset(Dataset):
     def __init__(self, samples: Sequence[SequenceSample], max_seq_len: int) -> None:
         if max_seq_len < 1:
@@ -98,18 +118,57 @@ class SequenceDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         sample = self.samples[index]
-        history = sample.input_item_ids[-self.max_seq_len :]
-        padded = torch.full((self.max_seq_len,), PAD_ITEM_ID, dtype=torch.long)
-        mask = torch.zeros(self.max_seq_len, dtype=torch.bool)
-        length = len(history)
-        if length:
-            padded[:length] = torch.tensor(history, dtype=torch.long)
-            mask[:length] = True
-        return {
-            "input_item_ids": padded,
-            "input_mask": mask,
-            "target_item_id": torch.tensor(sample.target_item_id, dtype=torch.long),
-        }
+        return _sample_to_batch_tensors(sample.input_item_ids, sample.target_item_id, self.max_seq_len)
+
+
+class SampledWindowDataset(Dataset):
+    """Random sliding-window samples per user, regenerated each epoch/shard."""
+
+    def __init__(
+        self,
+        sequences: dict[int, list[int]],
+        user_ids: Sequence[int],
+        max_seq_len: int,
+        windows_per_user: int,
+        seed: int,
+        min_history: int = 1,
+    ) -> None:
+        if max_seq_len < 1:
+            raise ValueError("max_seq_len must be >= 1")
+        if windows_per_user < 1:
+            raise ValueError("windows_per_user must be >= 1")
+
+        self.sequences = sequences
+        self.user_ids = list(user_ids)
+        self.max_seq_len = max_seq_len
+        self.windows_per_user = windows_per_user
+        self.min_history = min_history
+        self.samples = self._build_samples(seed)
+
+    def _build_samples(self, seed: int) -> list[tuple[int, int]]:
+        rng = np.random.default_rng(seed)
+        samples: list[tuple[int, int]] = []
+        for user_id in self.user_ids:
+            seq = self.sequences.get(user_id)
+            if not seq or len(seq) <= self.min_history:
+                continue
+            valid_targets = list(range(self.min_history, len(seq)))
+            if len(valid_targets) <= self.windows_per_user:
+                chosen = valid_targets
+            else:
+                chosen = rng.choice(valid_targets, size=self.windows_per_user, replace=False).tolist()
+            samples.extend((user_id, target_index) for target_index in chosen)
+        rng.shuffle(samples)
+        return samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        user_id, target_index = self.samples[index]
+        seq = self.sequences[user_id]
+        history = seq[max(0, target_index - self.max_seq_len) : target_index]
+        return _sample_to_batch_tensors(history, seq[target_index], self.max_seq_len)
 
 
 def _parse_context(context) -> dict:
@@ -177,6 +236,17 @@ def subsample_user_ids(user_ids: Sequence[int], max_users: int, seed: int = 42) 
     rng = np.random.default_rng(seed)
     chosen = rng.choice(np.array(ids, dtype=np.int64), size=max_users, replace=False)
     return sorted(int(user_id) for user_id in chosen)
+
+
+def split_into_shards(user_ids: Sequence[int], num_shards: int) -> list[list[int]]:
+    if num_shards < 1:
+        raise ValueError("num_shards must be >= 1")
+    ids = list(user_ids)
+    if not ids:
+        return []
+    shard_count = min(num_shards, len(ids))
+    shard_size = math.ceil(len(ids) / shard_count)
+    return [ids[index : index + shard_size] for index in range(0, len(ids), shard_size)]
 
 
 def build_training_windows(
@@ -257,18 +327,64 @@ def load_embedding_table(session: Session) -> ItemEmbeddingTable:
     return ItemEmbeddingTable(item_ids, vectors)
 
 
-def iter_interaction_rows(session: Session) -> Iterable[tuple[int, int, str, dict]]:
+def load_embedded_item_ids(session: Session) -> set[int]:
     rows = session.execute(
         text(
+            """
+            SELECT item_id
+            FROM item_embeddings
+            WHERE vector IS NOT NULL
+            ORDER BY item_id
+            """
+        )
+    )
+    return {int(row.item_id) for row in rows}
+
+
+def iter_interaction_rows(
+    session: Session,
+    user_ids: Sequence[int] | None = None,
+) -> Iterable[tuple[int, int, str, dict]]:
+    if user_ids is None:
+        query = text(
             """
             SELECT user_id, item_id, type, context_json
             FROM interactions
             ORDER BY user_id, ts, interaction_id
             """
         )
-    )
+        rows = session.execute(query)
+    else:
+        if not user_ids:
+            return
+        query = (
+            text(
+                """
+                SELECT user_id, item_id, type, context_json
+                FROM interactions
+                WHERE user_id IN :user_ids
+                ORDER BY user_id, ts, interaction_id
+                """
+            ).bindparams(bindparam("user_ids", expanding=True))
+        )
+        rows = session.execute(query, {"user_ids": list(user_ids)})
     for row in rows:
         yield int(row.user_id), int(row.item_id), str(row.type), _parse_context(row.context_json)
+
+
+def load_user_sequences_for_users(
+    session: Session,
+    user_ids: Sequence[int],
+    embedded_item_ids: set[int],
+    min_rating: float | None = DEFAULT_MIN_RATING,
+    min_interactions: int = MIN_INTERACTIONS,
+) -> dict[int, list[int]]:
+    return build_user_sequences(
+        iter_interaction_rows(session, user_ids=user_ids),
+        embedded_item_ids=embedded_item_ids,
+        min_rating=min_rating,
+        min_interactions=min_interactions,
+    )
 
 
 def load_user_sequences(
@@ -276,10 +392,49 @@ def load_user_sequences(
     embedded_item_ids: set[int],
     min_rating: float | None = DEFAULT_MIN_RATING,
     min_interactions: int = MIN_INTERACTIONS,
+    user_ids: Sequence[int] | None = None,
 ) -> dict[int, list[int]]:
     return build_user_sequences(
-        iter_interaction_rows(session),
+        iter_interaction_rows(session, user_ids=user_ids),
         embedded_item_ids=embedded_item_ids,
         min_rating=min_rating,
         min_interactions=min_interactions,
     )
+
+
+def load_sequences_for_user_subset(
+    session: Session,
+    embedded_item_ids: set[int],
+    max_users: int,
+    seed: int,
+    min_rating: float | None = DEFAULT_MIN_RATING,
+    min_interactions: int = MIN_INTERACTIONS,
+    batch_size: int = 5000,
+) -> dict[int, list[int]]:
+    """Load sequences for a random user subset without scanning the full table."""
+    candidate_ids = [
+        int(row.user_id)
+        for row in session.execute(text("SELECT DISTINCT user_id FROM interactions ORDER BY user_id"))
+    ]
+    rng = np.random.default_rng(seed)
+    rng.shuffle(candidate_ids)
+
+    sequences: dict[int, list[int]] = {}
+    for start in range(0, len(candidate_ids), batch_size):
+        batch = candidate_ids[start : start + batch_size]
+        batch_sequences = load_user_sequences_for_users(
+            session,
+            batch,
+            embedded_item_ids=embedded_item_ids,
+            min_rating=min_rating,
+            min_interactions=min_interactions,
+        )
+        sequences.update(batch_sequences)
+        if len(sequences) >= max_users:
+            break
+
+    if len(sequences) < max_users:
+        return sequences
+
+    chosen = subsample_user_ids(list(sequences), max_users, seed=seed)
+    return {user_id: sequences[user_id] for user_id in chosen}
