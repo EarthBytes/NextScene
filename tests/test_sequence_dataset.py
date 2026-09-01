@@ -8,11 +8,13 @@ import torch
 from app.services.sequence_dataset import (
     PAD_ITEM_ID,
     ItemEmbeddingTable,
+    SampledWindowDataset,
     SequenceDataset,
     build_eval_samples,
     build_training_windows,
     build_user_sequences,
     lookup_input_embeddings,
+    split_into_shards,
     split_user_ids,
     subsample_user_ids,
 )
@@ -105,3 +107,27 @@ def test_lookup_input_embeddings_applies_mask():
     embeddings = lookup_input_embeddings(batch, table)
     assert embeddings.shape[-1] == 4
     assert torch.allclose(embeddings[0, 2], torch.zeros(4))
+
+
+def test_split_into_shards_covers_all_users():
+    user_ids = list(range(10))
+    shards = split_into_shards(user_ids, num_shards=4)
+    assert len(shards) == 4
+    assert sorted(user_id for shard in shards for user_id in shard) == user_ids
+
+
+def test_split_train_users_into_batches_covers_all_users():
+    from app.services.sequence_training import split_train_users_into_batches
+
+    train_ids = list(range(100))
+    batches = split_train_users_into_batches(train_ids, num_batches=5)
+    assert len(batches) == 5
+    assert sorted(user_id for batch in batches for user_id in batch) == train_ids
+
+
+def test_sampled_window_dataset_is_reproducible():
+    sequences = {1: [1, 2, 3, 4, 5], 2: [6, 7, 8, 9]}
+    first = SampledWindowDataset(sequences, [1, 2], max_seq_len=3, windows_per_user=2, seed=11)
+    second = SampledWindowDataset(sequences, [1, 2], max_seq_len=3, windows_per_user=2, seed=11)
+    assert len(first) == len(second) == 4
+    assert first[0]["target_item_id"] == second[0]["target_item_id"]

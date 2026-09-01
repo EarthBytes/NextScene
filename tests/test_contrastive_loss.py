@@ -34,7 +34,7 @@ def test_per_sample_negatives():
     predicted = F.normalize(torch.randn(batch, dim), dim=-1)
     positive = predicted.clone()
     extra = F.normalize(torch.randn(batch, extra_k, dim), dim=-1)
-    loss = infonce_loss(predicted, positive, extra_negatives=extra, temperature=0.07)
+    loss = infonce_loss(predicted, positive, per_sample_negatives=extra, temperature=0.07)
     assert torch.isfinite(loss)
 
 

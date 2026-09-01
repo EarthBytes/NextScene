@@ -11,10 +11,12 @@ import torch.nn.functional as F
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
 from app.services.sequence_dataset import (
     ItemEmbeddingTable,
+    SampledWindowDataset,
     SequenceDataset,
     SequenceSample,
     create_dataloader,
     lookup_input_embeddings,
+    split_into_shards,
 )
 from app.services.sequence_training import (
     TrainingConfig,
@@ -86,15 +88,31 @@ def test_training_loop_writes_checkpoints(tmp_path: Path):
         batch_size=8,
         learning_rate=1e-3,
         negatives_per_sample=8,
+        random_negatives_per_sample=8,
+        hard_negatives_per_sample=0,
+        use_hard_negatives=False,
         early_stopping_patience=5,
+        windows_per_user=2,
+        num_shards=1,
+        num_workers=0,
     )
+    sequences = {
+        sample.user_id: list(sample.input_item_ids) + [sample.target_item_id]
+        for sample in [
+            SequenceSample(user_id=i, input_item_ids=(1 + (i % 10), 2 + (i % 10)), target_item_id=3 + (i % 10))
+            for i in range(16)
+        ]
+    }
+    train_shards = split_into_shards(list(sequences), num_shards=1)
     result = train_sequence_transformer(
         model,
-        loader,
+        sequences,
+        train_shards,
         loader,
         table,
         output_dir=tmp_path,
         training_config=training_config,
+        max_seq_len=4,
         device="cpu",
     )
     assert result["epochs_run"] == 2
