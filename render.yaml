@@ -14,7 +14,6 @@ services:
     dockerfilePath: ./docker/backend.Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
-    preDeployCommand: alembic upgrade head
     envVars:
       - key: ENVIRONMENT
         value: production
