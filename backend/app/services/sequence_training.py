@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import app.ml_runtime  # noqa: F401
-
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import app.ml_runtime  # noqa: F401
 import torch
-from sqlalchemy.orm import Session
-from torch.utils.data import DataLoader
-
 from app.config import settings
 from app.ml_runtime import resolve_device, resolve_num_workers, use_amp
 from app.models_ml.checkpoints import BEST_FILENAME, CONFIG_FILENAME, WEIGHTS_FILENAME
@@ -35,6 +31,8 @@ from app.services.sequence_dataset import (
     split_user_ids,
     subsample_user_ids,
 )
+from sqlalchemy.orm import Session
+from torch.utils.data import DataLoader
 
 LOG_FILENAME = "training_log.json"
 

@@ -5,20 +5,17 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
-import numpy as np
 import torch
-from sqlalchemy.orm import Session
-
 from app.ml_runtime import resolve_device, use_amp
-from app.models_ml.checkpoints import BEST_FILENAME, CONFIG_FILENAME
+from app.models_ml.checkpoints import CONFIG_FILENAME
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
+from app.services.sequence_cache import load_sequence_cache
 from app.services.sequence_dataset import (
-    DEFAULT_MIN_RATING,
     ItemEmbeddingTable,
     SequenceDataset,
     SequenceSample,
@@ -29,7 +26,7 @@ from app.services.sequence_dataset import (
     split_user_ids,
     subsample_user_ids,
 )
-from app.services.sequence_training import TrainingConfig
+from sqlalchemy.orm import Session
 
 
 @dataclass
@@ -80,7 +77,7 @@ def prepare_eval_samples(
         user_ids = subsample_user_ids(user_ids, max_users, seed)
         sequences = {user_id: sequences[user_id] for user_id in user_ids}
 
-    train_ids, val_ids, test_ids = split_user_ids(user_ids, seed=seed)
+    _train_ids, val_ids, test_ids = split_user_ids(user_ids, seed=seed)
     if split == "val":
         eval_user_ids = val_ids
     elif split == "test":
@@ -101,7 +98,7 @@ def build_popularity_ranking(
     for seq in sequences.values():
         counts.update(seq)
     ranked = [item_id for item_id, _count in counts.most_common()]
-    embedded = set(int(item_id) for item_id in embedding_table.item_ids.tolist())
+    embedded = {int(item_id) for item_id in embedding_table.item_ids.tolist()}
     ranked = [item_id for item_id in ranked if item_id in embedded]
     if top_n is not None:
         ranked = ranked[:top_n]

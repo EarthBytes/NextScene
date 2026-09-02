@@ -8,10 +8,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from app.models.item import Item
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
-from app.models.item import Item
 
 POSTER_EXTENSIONS = ("jpg", "jpeg", "png", "webp")
 CONTENT_TYPE_EXTENSIONS = {

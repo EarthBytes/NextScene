@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.db.session import SessionLocal
 from app.models.interaction import Interaction
 from app.models.item import Item

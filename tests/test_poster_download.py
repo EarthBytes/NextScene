@@ -2,7 +2,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from app.services.poster_download import (
     download_poster,
     existing_poster_item_ids,
@@ -84,10 +83,9 @@ def test_download_poster_handles_404(tmp_path: Path):
 )
 def test_run_poster_download_integration(tmp_path: Path, monkeypatch):
     pytest.importorskip("sqlalchemy")
-    from sqlalchemy import text
-
     from app.db.session import SessionLocal
     from app.models.item import Item
+    from sqlalchemy import text
 
     session = SessionLocal()
     try:

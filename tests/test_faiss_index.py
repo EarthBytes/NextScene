@@ -1,7 +1,7 @@
-import numpy as np
-import pytest
 from pathlib import Path
 
+import numpy as np
+import pytest
 from app.models.item_embedding import EMBEDDING_DIM
 from app.services.faiss_index import (
     ids_path_for_index,

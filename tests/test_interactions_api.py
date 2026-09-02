@@ -1,10 +1,9 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from fastapi.testclient import TestClient
-
 from app.main import app
 from app.services.recommendation_service import ServingContext
+from fastapi.testclient import TestClient
 
 
 def test_create_interaction_returns_201():

@@ -6,15 +6,14 @@ import time
 from typing import Any
 
 import httpx
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
 from app.models.item import Item
 from app.services.metadata_utils import (
     apply_item_metadata,
     clean_api_string,
     count_items_missing_metadata,
 )
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 TMDB_API_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"

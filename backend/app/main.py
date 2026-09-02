@@ -1,11 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from prometheus_client import make_asgi_app
-
 from app.api import auth, explanations, health, interactions, items, me, recommendations, users
 from app.config import settings
 from app.db.session import SessionLocal
@@ -13,6 +8,10 @@ from app.logging_config import configure_logging
 from app.middleware.latency import LatencyLoggingMiddleware, latency_percentiles
 from app.middleware.security import SecurityHeadersMiddleware
 from app.services.recommendation_service import try_load_serving_context, warmup_serving_context
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from prometheus_client import make_asgi_app
 
 configure_logging()
 

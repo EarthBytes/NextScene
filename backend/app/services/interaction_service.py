@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.models.interaction import Interaction, InteractionType
 from app.models.item import Item
 from app.services.user_cache import UserCache
-
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 VALID_INTERACTION_TYPES = {item.value for item in InteractionType}
 

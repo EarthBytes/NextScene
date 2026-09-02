@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.models.interaction import Interaction
 from app.models.item import Item
 from app.services.item_service import serialize_item
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 LIBRARY_SOURCE = "library"
 WATCHLIST_SOURCE = "watchlist"

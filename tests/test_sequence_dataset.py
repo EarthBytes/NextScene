@@ -4,7 +4,6 @@ import pytest
 pytest.importorskip("torch")
 
 import torch
-
 from app.services.sequence_dataset import (
     PAD_ITEM_ID,
     ItemEmbeddingTable,

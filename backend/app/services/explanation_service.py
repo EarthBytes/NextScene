@@ -6,9 +6,6 @@ from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.models.item import Item
 from app.services.catalog_search import CatalogSearcher
 from app.services.item_service import extract_year
@@ -19,8 +16,14 @@ from app.services.ranking_service import (
     build_feature_row,
     load_item_features,
 )
-from app.services.recommendation_service import RecommendationService
+from app.services.recommendation_service import (
+    RecommendationService,
+    load_user_history,
+    load_user_seen_items,
+)
 from app.services.user_cache import UserCache
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 
 @dataclass(frozen=True)
@@ -259,7 +262,7 @@ def explain_recommendation_natural(
             reasons.append(f"Fits alongside {anchor} in your library.")
 
     if not reasons:
-        reasons.append(f"Fits the mix of films you've added so far.")
+        reasons.append("Fits the mix of films you've added so far.")
 
     reasons = [_truncate(reason, 90) for reason in reasons[:2]]
 

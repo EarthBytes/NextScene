@@ -1,5 +1,5 @@
 from app.services.imdb_bulk_enrich import parse_imdb_genres
-from app.services.tmdb_metadata import parse_tmdb_movie, TMDB_IMAGE_BASE
+from app.services.tmdb_metadata import TMDB_IMAGE_BASE, parse_tmdb_movie
 
 
 def test_parse_imdb_genres():

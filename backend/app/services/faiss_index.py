@@ -7,10 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+from app.models.item_embedding import EMBEDDING_DIM
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
-from app.models.item_embedding import EMBEDDING_DIM
 
 INDEX_FILENAME = "items.index"
 
@@ -94,7 +93,7 @@ def save_faiss_index(
 
     meta = {
         "embedding_dim": EMBEDDING_DIM,
-        "item_count": int(len(item_ids)),
+        "item_count": len(item_ids),
         "index_type": "IndexFlatIP",
         "built_at": datetime.now(UTC).isoformat(),
     }
@@ -165,7 +164,7 @@ def run_faiss_index_build(
     save_faiss_index(index, index_path, item_ids)
 
     counts: dict[str, int | str] = {
-        "items_indexed": int(len(item_ids)),
+        "items_indexed": len(item_ids),
         "embedding_dim": EMBEDDING_DIM,
         "index_path": str(index_path),
         "ids_path": str(ids_path_for_index(index_path)),

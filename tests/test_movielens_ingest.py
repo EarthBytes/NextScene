@@ -1,10 +1,9 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
-
 from app.db.session import SessionLocal
 from app.services.movielens_ingest import format_imdb_id, parse_genres, run_ingestion
+from sqlalchemy import text
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "movielens"
 FIXTURE_ITEM_IDS = (880001, 880002)

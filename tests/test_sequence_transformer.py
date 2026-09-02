@@ -4,21 +4,20 @@ pytest.importorskip("torch")
 
 import torch
 import torch.nn.functional as F
-
 from app.models.item_embedding import EMBEDDING_DIM
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
 
 
 def _tiny_config(**kwargs) -> SequenceTransformerConfig:
-    defaults = dict(
-        d_model=32,
-        n_heads=4,
-        n_layers=2,
-        ff_dim=64,
-        dropout=0.0,
-        max_seq_len=8,
-        embedding_dim=16,
-    )
+    defaults = {
+        "d_model": 32,
+        "n_heads": 4,
+        "n_layers": 2,
+        "ff_dim": 64,
+        "dropout": 0.0,
+        "max_seq_len": 8,
+        "embedding_dim": 16,
+    }
     defaults.update(kwargs)
     return SequenceTransformerConfig(**defaults)
 

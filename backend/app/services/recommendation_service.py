@@ -9,14 +9,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
-
 from app.config import settings
 from app.models.item import Item
 from app.models_ml.checkpoints import CONFIG_FILENAME
 from app.services.catalog_search import CatalogSearcher, try_load_catalog_searcher
+from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_cache import cache_paths, load_sequence_cache
 from app.services.sequence_dataset import (
     DEFAULT_MIN_RATING,
@@ -26,9 +23,10 @@ from app.services.sequence_dataset import (
     load_embedding_table,
 )
 from app.services.sequence_evaluation import build_popularity_ranking
-from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_inference import SequenceInference
 from app.services.user_cache import UserCache
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +395,7 @@ def load_popularity_ranking(session: Session, embedding_table: ItemEmbeddingTabl
             """
         )
     )
-    embedded = set(int(item_id) for item_id in embedding_table.item_ids.tolist())
+    embedded = {int(item_id) for item_id in embedding_table.item_ids.tolist()}
     return [int(row.item_id) for row in rows if int(row.item_id) in embedded]
 
 

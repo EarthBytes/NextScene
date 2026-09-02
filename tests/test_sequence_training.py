@@ -7,11 +7,9 @@ pytest.importorskip("torch")
 
 import torch
 import torch.nn.functional as F
-
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
 from app.services.sequence_dataset import (
     ItemEmbeddingTable,
-    SampledWindowDataset,
     SequenceDataset,
     SequenceSample,
     create_dataloader,

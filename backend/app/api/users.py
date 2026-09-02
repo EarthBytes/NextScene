@@ -1,9 +1,8 @@
+from app.db.session import get_db
+from app.services.item_service import load_user_history, user_stats
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-
-from app.db.session import get_db
-from app.services.item_service import load_user_history, user_stats
 
 router = APIRouter()
 

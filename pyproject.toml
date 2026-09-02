@@ -51,6 +51,19 @@ where = ["backend"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+# FastAPI uses Depends()/Query() in parameter defaults by design.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Graceful degradation when optional ML assets or DB are unavailable.
+"backend/app/main.py" = ["BLE001"]
+"backend/app/services/catalog_search.py" = ["BLE001"]
+"backend/app/services/clip_embeddings.py" = ["BLE001"]
+"backend/app/services/recommendation_service.py" = ["BLE001"]
+"tests/test_movielens_ingest.py" = ["BLE001"]
+"tests/test_poster_download.py" = ["BLE001"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]

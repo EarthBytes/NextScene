@@ -9,12 +9,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from app.models.item_embedding import EMBEDDING_DIM
+from app.services.faiss_index import load_embeddings_from_db
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 from torch.utils.data import DataLoader, Dataset
-
-from app.models.item_embedding import EMBEDDING_DIM
-from app.services.faiss_index import load_embeddings_from_db
 
 PAD_ITEM_ID = 0
 MIN_INTERACTIONS = 3

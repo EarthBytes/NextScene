@@ -4,7 +4,6 @@ import pytest
 pytest.importorskip("torch")
 
 import torch
-
 from app.ml_runtime import resolve_num_workers
 from app.services.hard_negatives import NegativeSampler
 from app.services.sequence_dataset import ItemEmbeddingTable

@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from app.models.item_embedding import EMBEDDING_DIM
 from app.services.clip_embeddings import (
     _extract_features,
@@ -95,6 +94,7 @@ def test_extract_features_tensor():
 
 def test_extract_features_pooler_output():
     from types import SimpleNamespace
+
     import torch
 
     tensor = torch.tensor([[1.0, 0.0]])

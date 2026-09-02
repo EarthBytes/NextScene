@@ -5,14 +5,13 @@ from __future__ import annotations
 import csv
 import gzip
 from collections import defaultdict
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
-
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
 
 from app.models.item import Item
 from app.utils.text import parse_delimited_genres
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 IMDB_DOWNLOAD_BASE = "https://datasets.imdbws.com"
 
@@ -20,8 +19,7 @@ IMDB_DOWNLOAD_BASE = "https://datasets.imdbws.com"
 def iter_imdb_tsv(path: Path) -> Iterator[dict[str, str]]:
     with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        for row in reader:
-            yield row
+        yield from reader
 
 
 def load_imdb_ids(session: Session) -> set[str]:

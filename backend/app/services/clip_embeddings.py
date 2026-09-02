@@ -7,14 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
-
 from app.ml_runtime import resolve_device
 from app.models.item import Item
 from app.models.item_embedding import EMBEDDING_DIM, ItemEmbedding
 from app.services.poster_download import existing_poster_item_ids, find_existing_poster
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
 
 DEFAULT_MODEL = "openai/clip-vit-base-patch32"
 DEFAULT_BATCH_SIZE = 128

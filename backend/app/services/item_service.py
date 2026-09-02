@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import case, func, select, text
-from sqlalchemy.orm import Session
-
 from app.config import settings
 from app.models.interaction import Interaction
 from app.models.item import Item
 from app.services.poster_download import find_existing_poster
+from sqlalchemy import case, func, select, text
+from sqlalchemy.orm import Session
 
 CANONICAL_GENRES = (
     "Action",

@@ -5,13 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import JWTError, jwt
-from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
-
 from app.config import settings
 from app.models.interaction import Interaction
 from app.models.user import User
+from jose import JWTError, jwt
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 
 
 def hash_password(password: str) -> str:

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
-
 from app.api.deps import get_current_user
 from app.api.recommendations import INFERENCE_ERRORS
 from app.db.session import get_db
@@ -30,6 +26,9 @@ from app.services.recommendation_service import (
     genre_weighted_popularity_candidates,
     library_genre_profile,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 

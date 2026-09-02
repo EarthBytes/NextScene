@@ -6,7 +6,6 @@ import pytest
 pytest.importorskip("torch")
 
 import torch
-
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
 from app.services.sequence_dataset import ItemEmbeddingTable
 from app.services.sequence_inference import SequenceInference

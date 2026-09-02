@@ -5,10 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-
 from app.models.item_embedding import EMBEDDING_DIM
+from torch import nn
 
 
 @dataclass

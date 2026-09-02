@@ -1,8 +1,5 @@
 from pathlib import Path
 
-import numpy as np
-import pytest
-
 from app.services.sequence_cache import (
     cache_meta_matches,
     cache_paths,
