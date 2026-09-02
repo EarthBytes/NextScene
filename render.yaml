@@ -9,12 +9,12 @@ services:
   - type: web
     name: nextscene-api
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     dockerfilePath: ./docker/backend.Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
-    releaseCommand: alembic upgrade head
+    preDeployCommand: alembic upgrade head
     envVars:
       - key: ENVIRONMENT
         value: production
