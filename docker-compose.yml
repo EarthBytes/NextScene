@@ -24,9 +24,26 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://recsys:recsys@postgres:5432/recsys
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      ENVIRONMENT: development
+      LOG_FORMAT: json
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
     depends_on:
       postgres:
         condition: service_healthy
+    profiles:
+      - full
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
     profiles:
       - full
 

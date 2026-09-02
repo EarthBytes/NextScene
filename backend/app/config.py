@@ -27,6 +27,19 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"
+    log_format: str = "console"
+    environment: str = "development"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    jwt_secret: str = "dev-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 10080
+
+    def validate_production(self) -> None:
+        if self.environment != "production":
+            return
+        if self.jwt_secret == "dev-secret-change-in-production" or len(self.jwt_secret) < 32:
+            raise ValueError("Set a strong JWT_SECRET (32+ chars) in production")
 
 
 settings = Settings()
+settings.validate_production()

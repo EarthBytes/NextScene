@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -69,6 +70,116 @@ def filter_popularity_candidates(
     ][:k]
 
 
+def _normalize_genres(genres: list[str] | None) -> set[str]:
+    if not genres:
+        return set()
+    return {genre.strip().lower() for genre in genres if genre and genre.strip()}
+
+
+def load_item_genres_map(session: Session, item_ids: list[int]) -> dict[int, set[str]]:
+    if not item_ids:
+        return {}
+    rows = session.execute(
+        select(Item.item_id, Item.genres).where(Item.item_id.in_(item_ids))
+    ).all()
+    return {
+        int(row.item_id): {genre.lower() for genre in (row.genres or [])}
+        for row in rows
+    }
+
+
+def item_matches_genres(item_genres: set[str], filter_genres: set[str] | list[str]) -> bool:
+    normalized = _normalize_genres(list(filter_genres)) if filter_genres else set()
+    if not normalized:
+        return True
+    return bool(item_genres & normalized)
+
+
+def filter_candidates_by_genres(
+    session: Session,
+    candidates: list[tuple[int, float]],
+    genres: list[str] | None,
+    k: int,
+) -> list[tuple[int, float]]:
+    filter_set = _normalize_genres(genres)
+    if not filter_set:
+        return candidates[:k]
+
+    genre_map = load_item_genres_map(session, [item_id for item_id, _score in candidates])
+    filtered = [
+        (item_id, score)
+        for item_id, score in candidates
+        if item_matches_genres(genre_map.get(item_id, set()), filter_set)
+    ]
+    return filtered[:k]
+
+
+def library_genre_profile(library: list[dict]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for entry in library:
+        for genre in entry.get("genres") or []:
+            if genre:
+                counts[str(genre).lower()] += 1
+    return counts
+
+
+def genre_weighted_popularity_candidates(
+    session: Session,
+    popularity_ranking: list[int],
+    seen_items: set[int],
+    *,
+    genre_profile: Counter[str] | None = None,
+    filter_genres: list[str] | None = None,
+    k: int,
+    pool_size: int = 500,
+) -> list[tuple[int, float]]:
+    filter_set = _normalize_genres(filter_genres)
+    pool = [item_id for item_id in popularity_ranking if item_id not in seen_items][:pool_size]
+    if not pool:
+        return []
+
+    genre_map = load_item_genres_map(session, pool)
+    scored: list[tuple[int, float]] = []
+
+    for index, item_id in enumerate(pool):
+        item_genres = genre_map.get(item_id, set())
+        if filter_set and not item_matches_genres(item_genres, filter_set):
+            continue
+
+        if genre_profile:
+            overlap_score = sum(genre_profile.get(genre, 0) for genre in item_genres)
+        elif filter_set:
+            overlap_score = len(item_genres & filter_set)
+        else:
+            overlap_score = 0
+
+        popularity_score = float(len(popularity_ranking) - index)
+        scored.append((item_id, overlap_score * 10_000 + popularity_score))
+
+    scored.sort(key=lambda row: row[1], reverse=True)
+    return scored[:k]
+
+
+def _boost_candidates_by_library_genres(
+    session: Session,
+    candidates: list[tuple[int, float]],
+    genre_profile: Counter[str],
+    k: int,
+) -> list[tuple[int, float]]:
+    if not candidates:
+        return []
+    genre_map = load_item_genres_map(session, [item_id for item_id, _score in candidates])
+    boosted = [
+        (
+            item_id,
+            score + sum(genre_profile.get(genre, 0) for genre in genre_map.get(item_id, set())),
+        )
+        for item_id, score in candidates
+    ]
+    boosted.sort(key=lambda row: row[1], reverse=True)
+    return boosted[:k]
+
+
 def attach_titles(
     session: Session,
     candidates: list[tuple[int, float]],
@@ -115,16 +226,30 @@ class RecommendationService:
         session: Session,
         user_id: int,
         k: int,
+        *,
+        library_only: bool = False,
+        genres: list[str] | None = None,
+        library_entries: list[dict] | None = None,
     ) -> tuple[list[Recommendation], RecommendationTiming]:
         timing = RecommendationTiming()
         total_start = time.perf_counter()
+        filter_genres = genres or None
+        genre_profile = library_genre_profile(library_entries) if library_entries else None
 
         history_start = time.perf_counter()
-        history, seen_items = self._load_user_data(session, user_id)
+        history, seen_items = self._load_user_data(session, user_id, library_only=library_only)
         timing.history_ms = (time.perf_counter() - history_start) * 1000
 
         if len(history) < self.min_interactions:
-            results = self._popularity_recommendations(session, user_id, k, seen_items)
+            results = self._popularity_recommendations(
+                session,
+                user_id,
+                k,
+                seen_items,
+                library_only=library_only,
+                genres=filter_genres,
+                genre_profile=genre_profile if library_only else None,
+            )
             timing.total_ms = (time.perf_counter() - total_start) * 1000
             return results, timing
 
@@ -133,6 +258,8 @@ class RecommendationService:
         timing.inference_ms = (time.perf_counter() - inference_start) * 1000
 
         pool_size = self.candidate_pool_size if self.ranker is not None else k
+        if filter_genres:
+            pool_size = max(pool_size, k * 8)
         retrieval_start = time.perf_counter()
         candidates = self.catalog_searcher.search(
             predicted,
@@ -149,9 +276,18 @@ class RecommendationService:
                 candidates,
                 self.popularity_ranking,
                 self.embedding_table,
-                top_k=k,
+                top_k=max(k * 4, pool_size) if filter_genres else k,
             )
             timing.ranking_ms = (time.perf_counter() - ranking_start) * 1000
+        else:
+            candidates = candidates[: max(k * 4, pool_size) if filter_genres else k]
+
+        if filter_genres:
+            candidates = filter_candidates_by_genres(session, candidates, filter_genres, k)
+        elif library_only and genre_profile:
+            candidates = _boost_candidates_by_library_genres(
+                session, candidates, genre_profile, k
+            )
         else:
             candidates = candidates[:k]
 
@@ -159,21 +295,43 @@ class RecommendationService:
         timing.total_ms = (time.perf_counter() - total_start) * 1000
         return results, timing
 
-    def _load_user_data(self, session: Session, user_id: int) -> tuple[list[int], set[int]]:
+    def _load_user_data(
+        self,
+        session: Session,
+        user_id: int,
+        *,
+        library_only: bool = False,
+    ) -> tuple[list[int], set[int]]:
+        cache_key = 1_000_000_000 + user_id if library_only else user_id
+
         if self.user_cache is not None:
-            cached = self.user_cache.get(user_id)
+            cached = self.user_cache.get(cache_key)
             if cached is not None:
                 return cached.history, cached.seen_items
 
-        history = load_user_history(
-            session,
-            user_id,
-            max_items=self.inference.max_seq_len,
-            min_rating=self.min_rating,
-        )
-        seen_items = load_user_seen_items(session, user_id)
+        if library_only:
+            from app.services.library_service import (
+                load_excluded_recommendation_items,
+                load_library_history,
+            )
+
+            history = load_library_history(
+                session,
+                user_id,
+                max_items=self.inference.max_seq_len,
+            )
+            seen_items = load_excluded_recommendation_items(session, user_id)
+        else:
+            history = load_user_history(
+                session,
+                user_id,
+                max_items=self.inference.max_seq_len,
+                min_rating=self.min_rating,
+            )
+            seen_items = load_user_seen_items(session, user_id)
+
         if self.user_cache is not None:
-            self.user_cache.set(user_id, history, seen_items)
+            self.user_cache.set(cache_key, history, seen_items)
         return history, seen_items
 
     def _popularity_recommendations(
@@ -182,10 +340,30 @@ class RecommendationService:
         user_id: int,
         k: int,
         seen_items: set[int] | None = None,
+        *,
+        library_only: bool = False,
+        genres: list[str] | None = None,
+        genre_profile: Counter[str] | None = None,
     ) -> list[Recommendation]:
         if seen_items is None:
-            seen_items = load_user_seen_items(session, user_id)
-        filtered = filter_popularity_candidates(self.popularity_ranking, seen_items, k)
+            if library_only:
+                from app.services.library_service import load_excluded_recommendation_items
+
+                seen_items = load_excluded_recommendation_items(session, user_id)
+            else:
+                seen_items = load_user_seen_items(session, user_id)
+
+        if library_only and (genres or genre_profile):
+            filtered = genre_weighted_popularity_candidates(
+                session,
+                self.popularity_ranking,
+                seen_items,
+                genre_profile=genre_profile,
+                filter_genres=genres,
+                k=k,
+            )
+        else:
+            filtered = filter_popularity_candidates(self.popularity_ranking, seen_items, k)
         return attach_titles(session, filtered)
 
 

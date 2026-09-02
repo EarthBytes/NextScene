@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" fill="none">
+  <rect x="0" y="4" width="32" height="32" rx="8" fill="#111111" stroke="#DC2626" stroke-width="2"/>
+  <path d="M12 14L22 20L12 26V14Z" fill="#DC2626"/>
+  <text x="42" y="27" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="20" font-weight="700">Next</text>
+  <text x="98" y="27" fill="#DC2626" font-family="system-ui, sans-serif" font-size="20" font-weight="700">Scene</text>
+</svg>

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.session import get_db
+from app.services.item_service import load_items_by_ids
 from app.services.ranking_service import EXPERIMENT_NAME, assign_ab_variant
 from app.services.recommendation_service import popularity_recommendations
 
@@ -35,6 +36,10 @@ class RecommendationItem(BaseModel):
     item_id: int
     title: str | None = None
     score: float
+    genres: list[str] = Field(default_factory=list)
+    year: int | None = None
+    image_url: str | None = None
+    poster_url: str | None = None
 
 
 class RecommendationResponse(BaseModel):
@@ -113,10 +118,20 @@ def _recommendations_for_user(
     if timing is not None:
         _record_timing(timing)
 
+    item_details = load_items_by_ids(db, [rec.item_id for rec in results])
+
     return RecommendationResponse(
         user_id=user_id,
         recommendations=[
-            RecommendationItem(item_id=rec.item_id, title=rec.title, score=rec.score)
+            RecommendationItem(
+                item_id=rec.item_id,
+                title=rec.title,
+                score=rec.score,
+                genres=item_details.get(rec.item_id, {}).get("genres", []),
+                year=item_details.get(rec.item_id, {}).get("year"),
+                image_url=item_details.get(rec.item_id, {}).get("image_url"),
+                poster_url=item_details.get(rec.item_id, {}).get("poster_url"),
+            )
             for rec in results
         ],
         model_version=model_version,
