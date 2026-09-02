@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from app.services.catalog_search import CatalogSearcher, search_embedding_catalog
 from app.services.recommendation_service import (
     RecommendationService,
     load_user_history,
     load_user_seen_items,
     model_version_from_config,
-    search_embedding_catalog,
 )
 from app.services.sequence_dataset import ItemEmbeddingTable
 
@@ -140,17 +140,20 @@ def test_recommend_uses_candidate_pool_when_ranker_present():
     ranker.candidate_pool_size = 3
     ranker.rerank.return_value = [(100, 0.95), (101, 0.90)]
 
+    catalog_searcher = CatalogSearcher(embedding_table=table)
+
     service = RecommendationService(
         inference=inference,
         embedding_table=table,
         popularity_ranking=[100, 101],
         model_version="test",
+        catalog_searcher=catalog_searcher,
         ranker=ranker,
         candidate_pool_size=3,
         min_interactions=3,
     )
 
-    results = service.recommend(FakeSession(), user_id=500, k=2)
+    results, _timing = service.recommend(FakeSession(), user_id=500, k=2)
     ranker.rerank.assert_called_once()
     assert len(results) == 2
 
@@ -202,14 +205,17 @@ def test_recommend_excludes_items_outside_sequence_window():
     inference.max_seq_len = 50
     inference.predict_next_vector.return_value = np.array([1.0, 0.0], dtype=np.float32)
 
+    catalog_searcher = CatalogSearcher(embedding_table=table)
+
     service = RecommendationService(
         inference=inference,
         embedding_table=table,
         popularity_ranking=[904, 100],
         model_version="test",
+        catalog_searcher=catalog_searcher,
         min_interactions=3,
     )
 
-    results = service.recommend(FakeSession(), user_id=500, k=2)
+    results, _timing = service.recommend(FakeSession(), user_id=500, k=2)
     assert all(rec.item_id != 904 for rec in results)
     assert len(results) == 2
