@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.interaction import Interaction
 from app.models.item import Item
+from app.utils.text import parse_delimited_genres
 
 
 def format_imdb_id(imdb_id: str | int) -> str:
@@ -24,9 +25,11 @@ def format_imdb_id(imdb_id: str | int) -> str:
 
 
 def parse_genres(genres: str | None) -> list[str] | None:
-    if not genres or genres == "(no genres listed)":
-        return None
-    return [g.strip() for g in genres.split("|") if g.strip()]
+    return parse_delimited_genres(
+        genres,
+        "|",
+        null_sentinels=frozenset({"(no genres listed)"}),
+    )
 
 
 def timestamp_to_datetime(ts: int) -> datetime:

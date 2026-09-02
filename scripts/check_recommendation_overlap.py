@@ -1,12 +1,7 @@
 """Check that recommended items never overlap with a user's interaction history."""
 
-import os
-
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 import argparse
 import json
-import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,18 +9,15 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import _bootstrap  # noqa: F401
 
 import app.ml_runtime  # noqa: F401
 
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from _common import require_database
 
 from app.config import settings
 from app.db.session import SessionLocal
-from app.services.clip_embeddings import resolve_device
+from app.ml_runtime import resolve_device
 from app.services.recommendation_service import (
     Recommendation,
     load_recommendation_service,
@@ -46,15 +38,6 @@ class OverlapResult:
     @property
     def passed(self) -> bool:
         return not self.overlap_item_ids
-
-
-def check_database(session) -> None:
-    try:
-        session.execute(text("SELECT 1"))
-    except OperationalError:
-        print("Cannot connect to PostgreSQL on localhost:5432.")
-        print("Start Docker Desktop, then run: docker compose up -d postgres")
-        raise SystemExit(1)
 
 
 def parse_user_ids(raw: str) -> list[int]:
@@ -244,7 +227,7 @@ def build_report(results: list[OverlapResult], args: argparse.Namespace) -> dict
 def main() -> int:
     args = parse_args()
     session = SessionLocal()
-    check_database(session)
+    require_database(session)
 
     user_ids = args.user_ids or sample_user_ids(
         session,

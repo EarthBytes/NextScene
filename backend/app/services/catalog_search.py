@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.services.faiss_index import load_faiss_index, search_index
@@ -102,7 +105,7 @@ def try_load_catalog_searcher(
                 faiss_index=faiss_index,
                 faiss_item_ids=faiss_item_ids,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Faiss index load failed (%s); using numpy search", exc)
 
     return CatalogSearcher(embedding_table=embedding_table, mode="numpy")

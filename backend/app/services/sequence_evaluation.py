@@ -14,9 +14,9 @@ import numpy as np
 import torch
 from sqlalchemy.orm import Session
 
+from app.ml_runtime import resolve_device, use_amp
+from app.models_ml.checkpoints import BEST_FILENAME, CONFIG_FILENAME
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
-from app.services.clip_embeddings import resolve_device
-from app.services.sequence_cache import load_sequence_cache
 from app.services.sequence_dataset import (
     DEFAULT_MIN_RATING,
     ItemEmbeddingTable,
@@ -29,10 +29,7 @@ from app.services.sequence_dataset import (
     split_user_ids,
     subsample_user_ids,
 )
-from app.services.sequence_training import TrainingConfig, _use_amp
-
-BEST_FILENAME = "best.pt"
-CONFIG_FILENAME = "config.json"
+from app.services.sequence_training import TrainingConfig
 
 
 @dataclass
@@ -220,7 +217,7 @@ def evaluate_transformer_model(
     histories = _history_sets(samples)
     rankings: list[list[int]] = []
     offset = 0
-    amp_enabled = _use_amp(device)
+    amp_enabled = use_amp(device)
 
     for batch in loader:
         batch = {key: value.to(device) for key, value in batch.items()}

@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 from torch.utils.data import DataLoader
 
 from app.config import settings
-from app.ml_runtime import resolve_num_workers
+from app.ml_runtime import resolve_device, resolve_num_workers, use_amp
+from app.models_ml.checkpoints import BEST_FILENAME, CONFIG_FILENAME, WEIGHTS_FILENAME
 from app.models_ml.contrastive_loss import DEFAULT_TEMPERATURE, infonce_loss
 from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
-from app.services.clip_embeddings import resolve_device
 from app.services.hard_negatives import NegativeSampler
 from app.services.sequence_cache import load_or_build_sequences
 from app.services.sequence_dataset import (
@@ -36,9 +36,6 @@ from app.services.sequence_dataset import (
     subsample_user_ids,
 )
 
-WEIGHTS_FILENAME = "weights.pt"
-BEST_FILENAME = "best.pt"
-CONFIG_FILENAME = "config.json"
 LOG_FILENAME = "training_log.json"
 
 
@@ -85,10 +82,6 @@ def set_seed(seed: int) -> None:
 
 def _device_type(device: torch.device | str) -> str:
     return torch.device(device).type
-
-
-def _use_amp(device: torch.device | str) -> bool:
-    return _device_type(device) in ("cuda", "mps")
 
 
 def recall_at_k(
@@ -172,7 +165,7 @@ def train_one_epoch(
     model.train()
     total_loss = 0.0
     total_items = 0
-    amp_enabled = _use_amp(device)
+    amp_enabled = use_amp(device)
     device_type = _device_type(device)
 
     for batch in loader:
@@ -215,7 +208,7 @@ def evaluate(
     total_loss = 0.0
     total_recall = 0.0
     total_items = 0
-    amp_enabled = _use_amp(device)
+    amp_enabled = use_amp(device)
     device_type = _device_type(device)
 
     for batch in loader:

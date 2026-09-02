@@ -23,6 +23,8 @@ RECOMMENDATION_LATENCY = Histogram(
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
+INFERENCE_ERRORS = (RuntimeError, ValueError)
+
 
 class RecommendationRequest(BaseModel):
     user_id: int = Field(..., description="User identifier")
@@ -49,6 +51,16 @@ def _record_timing(timing) -> None:
     for stage, ms in timing.as_dict().items():
         stage_name = stage.removesuffix("_ms")
         RECOMMENDATION_LATENCY.labels(stage=stage_name).observe(ms / 1000)
+
+
+def _popularity_results(serving, db: Session, user_id: int, k: int):
+    return popularity_recommendations(
+        db,
+        user_id=user_id,
+        k=k,
+        popularity_ranking=serving.popularity_ranking,
+        user_cache=serving.user_cache,
+    )
 
 
 def _recommendations_for_user(
@@ -84,26 +96,14 @@ def _recommendations_for_user(
             model_version = serving.service.model_version
             if variant is None:
                 variant = "generative"
-        except Exception:
+        except INFERENCE_ERRORS:
             if not settings.enable_fallback_recs:
                 raise
-            results = popularity_recommendations(
-                db,
-                user_id=user_id,
-                k=k,
-                popularity_ranking=serving.popularity_ranking,
-                user_cache=serving.user_cache,
-            )
+            results = _popularity_results(serving, db, user_id, k)
             model_version = serving.model_version
             variant = "popularity"
     elif settings.enable_fallback_recs:
-        results = popularity_recommendations(
-            db,
-            user_id=user_id,
-            k=k,
-            popularity_ranking=serving.popularity_ranking,
-            user_cache=serving.user_cache,
-        )
+        results = _popularity_results(serving, db, user_id, k)
         model_version = serving.model_version
         if variant is None:
             variant = "popularity"

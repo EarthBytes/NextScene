@@ -10,15 +10,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.item import Item
+from app.services.metadata_utils import (
+    apply_item_metadata,
+    clean_api_string,
+    count_items_missing_metadata,
+)
 
 OMDB_API_URL = "https://www.omdbapi.com/"
-
-
-def _clean(value: str | None) -> str | None:
-    if value is None or value == "N/A":
-        return None
-    stripped = value.strip()
-    return stripped or None
 
 
 def parse_omdb_response(data: dict[str, Any]) -> dict[str, Any] | None:
@@ -26,32 +24,32 @@ def parse_omdb_response(data: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     metadata: dict[str, Any] = {
-        "year": _clean(data.get("Year")),
-        "rated": _clean(data.get("Rated")),
-        "released": _clean(data.get("Released")),
-        "runtime": _clean(data.get("Runtime")),
-        "director": _clean(data.get("Director")),
-        "writer": _clean(data.get("Writer")),
-        "actors": _clean(data.get("Actors")),
-        "language": _clean(data.get("Language")),
-        "country": _clean(data.get("Country")),
-        "awards": _clean(data.get("Awards")),
-        "imdb_rating": _clean(data.get("imdbRating")),
-        "imdb_votes": _clean(data.get("imdbVotes")),
-        "metascore": _clean(data.get("Metascore")),
-        "box_office": _clean(data.get("BoxOffice")),
-        "omdb_type": _clean(data.get("Type")),
+        "year": clean_api_string(data.get("Year")),
+        "rated": clean_api_string(data.get("Rated")),
+        "released": clean_api_string(data.get("Released")),
+        "runtime": clean_api_string(data.get("Runtime")),
+        "director": clean_api_string(data.get("Director")),
+        "writer": clean_api_string(data.get("Writer")),
+        "actors": clean_api_string(data.get("Actors")),
+        "language": clean_api_string(data.get("Language")),
+        "country": clean_api_string(data.get("Country")),
+        "awards": clean_api_string(data.get("Awards")),
+        "imdb_rating": clean_api_string(data.get("imdbRating")),
+        "imdb_votes": clean_api_string(data.get("imdbVotes")),
+        "metascore": clean_api_string(data.get("Metascore")),
+        "box_office": clean_api_string(data.get("BoxOffice")),
+        "omdb_type": clean_api_string(data.get("Type")),
         "omdb_ratings": data.get("Ratings"),
     }
 
-    genre_text = _clean(data.get("Genre"))
+    genre_text = clean_api_string(data.get("Genre"))
     genres = None
     if genre_text:
         genres = [g.strip() for g in genre_text.split(",") if g.strip()]
 
     return {
-        "description": _clean(data.get("Plot")),
-        "image_url": _clean(data.get("Poster")),
+        "description": clean_api_string(data.get("Plot")),
+        "image_url": clean_api_string(data.get("Poster")),
         "genres": genres,
         "metadata_json": {k: v for k, v in metadata.items() if v is not None},
     }
@@ -60,19 +58,11 @@ def parse_omdb_response(data: dict[str, Any]) -> dict[str, Any] | None:
 def fetch_omdb_metadata(
     imdb_id: str,
     api_key: str,
-    client: httpx.Client | None = None,
+    client: httpx.Client,
 ) -> dict[str, Any] | None:
-    owns_client = client is None
-    if owns_client:
-        client = httpx.Client(timeout=30.0)
-
-    try:
-        response = client.get(OMDB_API_URL, params={"i": imdb_id, "apikey": api_key})
-        response.raise_for_status()
-        return parse_omdb_response(response.json())
-    finally:
-        if owns_client:
-            client.close()
+    response = client.get(OMDB_API_URL, params={"i": imdb_id, "apikey": api_key})
+    response.raise_for_status()
+    return parse_omdb_response(response.json())
 
 
 def apply_metadata_to_item(session: Session, item_id: int, metadata: dict[str, Any]) -> bool:
@@ -80,19 +70,7 @@ def apply_metadata_to_item(session: Session, item_id: int, metadata: dict[str, A
     if item is None:
         return False
 
-    if metadata.get("description"):
-        item.description = metadata["description"]
-    if metadata.get("image_url"):
-        item.image_url = metadata["image_url"]
-    if metadata.get("genres"):
-        item.genres = metadata["genres"]
-
-    patch = metadata.get("metadata_json", {})
-    if patch:
-        current = dict(item.metadata_json or {})
-        current.update(patch)
-        item.metadata_json = current
-
+    apply_item_metadata(item, metadata, overwrite_genres=True)
     return True
 
 
@@ -123,6 +101,13 @@ def items_needing_metadata(
     return [(int(row.item_id), str(row.imdb_id)) for row in rows]
 
 
+def count_remaining(session: Session) -> int:
+    return count_items_missing_metadata(
+        session,
+        "imdb_id IS NOT NULL AND (description IS NULL OR image_url IS NULL)",
+    )
+
+
 def run_metadata_fetch(
     session: Session,
     api_key: str,
@@ -141,12 +126,7 @@ def run_metadata_fetch(
 
             for attempt in range(max_retries):
                 try:
-                    response = client.get(
-                        OMDB_API_URL,
-                        params={"i": imdb_id, "apikey": api_key},
-                    )
-                    response.raise_for_status()
-                    metadata = parse_omdb_response(response.json())
+                    metadata = fetch_omdb_metadata(imdb_id, api_key, client)
                     break
                 except httpx.HTTPError:
                     if attempt + 1 == max_retries:
