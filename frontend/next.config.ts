@@ -19,7 +19,8 @@ function apiPosterPattern() {
 const apiPattern = apiPosterPattern();
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Standalone is for Docker self-hosting; Next 16.3 + Vercel's adapter breaks on it.
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   images: {
     remotePatterns: [
       ...(apiPattern ? [apiPattern] : []),
