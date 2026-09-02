@@ -10,12 +10,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.models.item import Item
 from app.models_ml.checkpoints import CONFIG_FILENAME, RANKER_MODEL_FILENAME
 from app.services.sequence_dataset import ItemEmbeddingTable
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 FEATURE_NAMES: tuple[str, ...] = (
     "retrieval_score",

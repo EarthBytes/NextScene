@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
-
 from app.models.interaction import Interaction
 from app.models.item import Item
 from app.utils.text import parse_delimited_genres
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
 
 
 def format_imdb_id(imdb_id: str | int) -> str:
@@ -33,7 +32,7 @@ def parse_genres(genres: str | None) -> list[str] | None:
 
 
 def timestamp_to_datetime(ts: int) -> datetime:
-    return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    return datetime.fromtimestamp(int(ts), tz=UTC)
 
 
 def clear_ingested_data(session: Session) -> None:

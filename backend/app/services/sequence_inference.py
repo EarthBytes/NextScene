@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
 from app.ml_runtime import resolve_device, use_amp
 from app.models_ml.checkpoints import BEST_FILENAME
 from app.models_ml.sequence_transformer import SequenceTransformer

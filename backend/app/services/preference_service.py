@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.models.user import User
 from app.services.item_service import CANONICAL_GENRES
+from sqlalchemy.orm import Session
 
 _CANONICAL_SET = set(CANONICAL_GENRES)
 _CANONICAL_ORDER = {genre: index for index, genre in enumerate(CANONICAL_GENRES)}

@@ -1,13 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from prometheus_client import Counter, Histogram
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
-
 from app.config import settings
 from app.db.session import get_db
 from app.services.item_service import load_items_by_ids
 from app.services.ranking_service import EXPERIMENT_NAME, assign_ab_variant
 from app.services.recommendation_service import popularity_recommendations
+from fastapi import APIRouter, Depends, HTTPException, Request
+from prometheus_client import Counter, Histogram
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 

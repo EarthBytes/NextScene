@@ -1,9 +1,8 @@
+from app.db.session import get_db
+from app.services.interaction_service import log_interaction
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-
-from app.db.session import get_db
-from app.services.interaction_service import log_interaction
 
 router = APIRouter()
 

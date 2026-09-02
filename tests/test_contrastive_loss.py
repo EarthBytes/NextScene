@@ -4,7 +4,6 @@ pytest.importorskip("torch")
 
 import torch
 import torch.nn.functional as F
-
 from app.models_ml.contrastive_loss import infonce_loss
 
 

@@ -7,8 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-from sqlalchemy.orm import Session
-
 from app.services.sequence_dataset import (
     DEFAULT_MIN_RATING,
     MIN_INTERACTIONS,
@@ -16,6 +14,7 @@ from app.services.sequence_dataset import (
     iter_interaction_rows,
     load_embedded_item_ids,
 )
+from sqlalchemy.orm import Session
 
 META_FILENAME = "meta.json"
 SEQUENCES_FILENAME = "sequences.npz"

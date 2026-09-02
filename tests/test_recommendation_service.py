@@ -2,8 +2,6 @@ import json
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
-
 from app.services.catalog_search import CatalogSearcher, search_embedding_catalog
 from app.services.recommendation_service import (
     RecommendationService,

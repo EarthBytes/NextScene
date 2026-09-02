@@ -2,7 +2,12 @@
 
 from unittest.mock import MagicMock
 
-from app.services.auth_service import delete_user_account, hash_password, register_user, verify_password
+from app.services.auth_service import (
+    delete_user_account,
+    hash_password,
+    register_user,
+    verify_password,
+)
 
 
 def test_register_preserves_display_name_casing():

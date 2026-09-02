@@ -1,9 +1,8 @@
+from app.db.session import get_db
+from app.services.item_service import get_item, list_genres, list_tags, search_items
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-
-from app.db.session import get_db
-from app.services.item_service import get_item, list_genres, list_tags, search_items
 
 router = APIRouter()
 
