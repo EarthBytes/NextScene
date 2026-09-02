@@ -39,6 +39,8 @@ jobs:
           pip install pytest ruff
       - name: Lint
         run: ruff check backend tests
+      - name: Run database migrations
+        run: PYTHONPATH=backend alembic upgrade head
       - name: Test
         run: PYTHONPATH=backend pytest tests -q --ignore=tests/test_clip_embeddings.py
 
