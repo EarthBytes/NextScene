@@ -1,6 +1,6 @@
 import numpy as np
 from app.services.catalog_search import CatalogSearcher, search_embedding_catalog
-from app.services.sequence_dataset import ItemEmbeddingTable
+from app.services.embedding_table import ItemEmbeddingTable
 
 
 def _table() -> ItemEmbeddingTable:

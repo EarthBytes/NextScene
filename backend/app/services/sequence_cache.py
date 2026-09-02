@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-from app.services.sequence_dataset import (
+from app.services.embedding_table import (
     DEFAULT_MIN_RATING,
     MIN_INTERACTIONS,
     build_user_sequences,
