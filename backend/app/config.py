@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     clip_model_name: str = "openai/clip-vit-base-patch32"
     enable_explainability: bool = True
     enable_fallback_recs: bool = True
+    enable_faiss_serving: bool = False
+    user_cache_ttl_seconds: int = 300
+    user_cache_max_size: int = 1000
+    enable_latency_logging: bool = True
+    warmup_on_startup: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"

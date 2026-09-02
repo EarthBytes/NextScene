@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import logging
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.item import Item
+from app.services.catalog_search import CatalogSearcher, try_load_catalog_searcher
 from app.services.sequence_cache import cache_paths, load_sequence_cache
 from app.services.sequence_dataset import (
     DEFAULT_MIN_RATING,
@@ -25,6 +28,9 @@ from app.services.sequence_evaluation import (
 )
 from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_inference import SequenceInference
+from app.services.user_cache import UserCache
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -34,30 +40,22 @@ class Recommendation:
     score: float
 
 
-def search_embedding_catalog(
-    embedding_table: ItemEmbeddingTable,
-    query_vector: np.ndarray,
-    top_k: int,
-    exclude_item_ids: set[int] | None = None,
-) -> list[tuple[int, float]]:
-    """Retrieve top-k items by cosine similarity without Faiss (macOS-safe after torch)."""
-    vectors = embedding_table.vectors.detach().cpu().numpy()
-    item_ids = embedding_table.item_ids.detach().cpu().numpy().astype(np.int64)
-    query = np.ascontiguousarray(query_vector.astype(np.float32).reshape(-1))
-    norm = float(np.linalg.norm(query))
-    if norm > 0:
-        query /= norm
-    scores = vectors @ query
-    if exclude_item_ids:
-        scores = scores.copy()
-        scores[np.isin(item_ids, list(exclude_item_ids))] = -np.inf
-    available = int(np.sum(np.isfinite(scores)))
-    k = min(top_k, available)
-    if k <= 0:
-        return []
-    top_indices = np.argpartition(-scores, k - 1)[:k]
-    top_indices = top_indices[np.argsort(-scores[top_indices])]
-    return [(int(item_ids[idx]), float(scores[idx])) for idx in top_indices]
+@dataclass
+class RecommendationTiming:
+    history_ms: float = 0.0
+    inference_ms: float = 0.0
+    retrieval_ms: float = 0.0
+    ranking_ms: float = 0.0
+    total_ms: float = 0.0
+
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "history_ms": round(self.history_ms, 2),
+            "inference_ms": round(self.inference_ms, 2),
+            "retrieval_ms": round(self.retrieval_ms, 2),
+            "ranking_ms": round(self.ranking_ms, 2),
+            "total_ms": round(self.total_ms, 2),
+        }
 
 
 class RecommendationService:
@@ -68,40 +66,57 @@ class RecommendationService:
         popularity_ranking: list[int],
         model_version: str,
         *,
+        catalog_searcher: CatalogSearcher,
         ranker: RankingModel | None = None,
         candidate_pool_size: int = 50,
         min_interactions: int = MIN_INTERACTIONS,
         min_rating: float | None = DEFAULT_MIN_RATING,
+        user_cache: UserCache | None = None,
     ) -> None:
         self.inference = inference
         self.embedding_table = embedding_table
         self.popularity_ranking = popularity_ranking
         self.model_version = model_version
+        self.catalog_searcher = catalog_searcher
         self.ranker = ranker
         self.candidate_pool_size = candidate_pool_size
         self.min_interactions = min_interactions
         self.min_rating = min_rating
+        self.user_cache = user_cache
 
-    def recommend(self, session: Session, user_id: int, k: int) -> list[Recommendation]:
-        history = load_user_history(
-            session,
-            user_id,
-            max_items=self.inference.max_seq_len,
-            min_rating=self.min_rating,
-        )
+    def recommend(
+        self,
+        session: Session,
+        user_id: int,
+        k: int,
+    ) -> tuple[list[Recommendation], RecommendationTiming]:
+        timing = RecommendationTiming()
+        total_start = time.perf_counter()
+
+        history_start = time.perf_counter()
+        history, seen_items = self._load_user_data(session, user_id)
+        timing.history_ms = (time.perf_counter() - history_start) * 1000
+
         if len(history) < self.min_interactions:
-            return self._popularity_recommendations(session, user_id, k)
+            results = self._popularity_recommendations(session, user_id, k, seen_items)
+            timing.total_ms = (time.perf_counter() - total_start) * 1000
+            return results, timing
 
+        inference_start = time.perf_counter()
         predicted = self.inference.predict_next_vector(history)
-        seen_items = load_user_seen_items(session, user_id)
+        timing.inference_ms = (time.perf_counter() - inference_start) * 1000
+
         pool_size = self.candidate_pool_size if self.ranker is not None else k
-        candidates = search_embedding_catalog(
-            self.embedding_table,
+        retrieval_start = time.perf_counter()
+        candidates = self.catalog_searcher.search(
             predicted,
             top_k=pool_size,
             exclude_item_ids=seen_items,
         )
+        timing.retrieval_ms = (time.perf_counter() - retrieval_start) * 1000
+
         if self.ranker is not None:
+            ranking_start = time.perf_counter()
             candidates = self.ranker.rerank(
                 session,
                 history,
@@ -110,17 +125,40 @@ class RecommendationService:
                 self.embedding_table,
                 top_k=k,
             )
+            timing.ranking_ms = (time.perf_counter() - ranking_start) * 1000
         else:
             candidates = candidates[:k]
-        return self._attach_titles(session, candidates)
+
+        results = self._attach_titles(session, candidates)
+        timing.total_ms = (time.perf_counter() - total_start) * 1000
+        return results, timing
+
+    def _load_user_data(self, session: Session, user_id: int) -> tuple[list[int], set[int]]:
+        if self.user_cache is not None:
+            cached = self.user_cache.get(user_id)
+            if cached is not None:
+                return cached.history, cached.seen_items
+
+        history = load_user_history(
+            session,
+            user_id,
+            max_items=self.inference.max_seq_len,
+            min_rating=self.min_rating,
+        )
+        seen_items = load_user_seen_items(session, user_id)
+        if self.user_cache is not None:
+            self.user_cache.set(user_id, history, seen_items)
+        return history, seen_items
 
     def _popularity_recommendations(
         self,
         session: Session,
         user_id: int,
         k: int,
+        seen_items: set[int] | None = None,
     ) -> list[Recommendation]:
-        seen_items = load_user_seen_items(session, user_id)
+        if seen_items is None:
+            seen_items = load_user_seen_items(session, user_id)
         filtered = [
             (item_id, float(len(self.popularity_ranking) - index))
             for index, item_id in enumerate(self.popularity_ranking)
@@ -232,10 +270,12 @@ def load_recommendation_service(
     *,
     model_dir: Path | None = None,
     inference_device: str = "cpu",
+    user_cache: UserCache | None = None,
 ) -> RecommendationService:
     """Load model, embeddings, and popularity data for serving."""
     model_dir = model_dir or Path(settings.transformer_model_path)
     embedding_table = load_embedding_table(session)
+    catalog_searcher = try_load_catalog_searcher(embedding_table)
     inference = SequenceInference.from_model_dir(
         model_dir,
         embedding_table,
@@ -252,14 +292,22 @@ def load_recommendation_service(
     model_version = model_version_from_config(model_dir)
     if ranker is not None:
         model_version = f"{model_version}+{ranker.model_version}"
+    model_version = f"{model_version}+{catalog_searcher.mode}"
+
+    cache = user_cache or UserCache(
+        max_size=settings.user_cache_max_size,
+        ttl_seconds=settings.user_cache_ttl_seconds,
+    )
 
     return RecommendationService(
         inference=inference,
         embedding_table=embedding_table,
         popularity_ranking=popularity_ranking,
         model_version=model_version,
+        catalog_searcher=catalog_searcher,
         ranker=ranker,
         candidate_pool_size=candidate_pool_size,
+        user_cache=cache,
     )
 
 
@@ -268,27 +316,63 @@ class ServingContext:
     service: RecommendationService | None
     popularity_ranking: list[int]
     model_version: str
+    catalog_searcher: CatalogSearcher | None = None
+    user_cache: UserCache = field(default_factory=UserCache)
+    retrieval_mode: str = "numpy"
 
 
 def try_load_serving_context(session: Session) -> ServingContext:
     """Load the full serving stack, or popularity fallback if the model is missing."""
+    user_cache = UserCache(
+        max_size=settings.user_cache_max_size,
+        ttl_seconds=settings.user_cache_ttl_seconds,
+    )
     try:
-        service = load_recommendation_service(session)
+        service = load_recommendation_service(session, user_cache=user_cache)
         return ServingContext(
             service=service,
             popularity_ranking=service.popularity_ranking,
             model_version=service.model_version,
+            catalog_searcher=service.catalog_searcher,
+            user_cache=user_cache,
+            retrieval_mode=service.catalog_searcher.mode,
         )
     except FileNotFoundError:
         if not settings.enable_fallback_recs:
             raise
         embedding_table = load_embedding_table(session)
+        catalog_searcher = try_load_catalog_searcher(embedding_table)
         popularity_ranking = load_popularity_ranking(session, embedding_table)
         return ServingContext(
             service=None,
             popularity_ranking=popularity_ranking,
             model_version="popularity-fallback",
+            catalog_searcher=catalog_searcher,
+            user_cache=user_cache,
+            retrieval_mode=catalog_searcher.mode,
         )
+
+
+def warmup_serving_context(session: Session, serving: ServingContext) -> None:
+    """Run dummy inference to warm model weights and caches."""
+    if not settings.warmup_on_startup or serving.service is None:
+        return
+
+    try:
+        history = load_user_history(
+            session,
+            user_id=1,
+            max_items=serving.service.inference.max_seq_len,
+            min_rating=serving.service.min_rating,
+        )
+        if len(history) >= serving.service.min_interactions:
+            serving.service.inference.predict_next_vector(history)
+            query = serving.service.inference.predict_next_vector(history)
+            if serving.catalog_searcher is not None:
+                serving.catalog_searcher.search(query, top_k=5)
+        logger.info("Serving warmup completed (retrieval_mode=%s)", serving.retrieval_mode)
+    except Exception as exc:
+        logger.warning("Serving warmup skipped: %s", exc)
 
 
 def popularity_recommendations(
@@ -296,8 +380,19 @@ def popularity_recommendations(
     user_id: int,
     k: int,
     popularity_ranking: list[int],
+    user_cache: UserCache | None = None,
 ) -> list[Recommendation]:
-    seen_items = load_user_seen_items(session, user_id)
+    if user_cache is not None:
+        cached = user_cache.get(user_id)
+        if cached is not None:
+            seen_items = cached.seen_items
+        else:
+            seen_items = load_user_seen_items(session, user_id)
+            history = load_user_history(session, user_id)
+            user_cache.set(user_id, history, seen_items)
+    else:
+        seen_items = load_user_seen_items(session, user_id)
+
     filtered = [
         (item_id, float(len(popularity_ranking) - index))
         for index, item_id in enumerate(popularity_ranking)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from prometheus_client import Counter
+from prometheus_client import Counter, Histogram
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,13 @@ RECOMMENDATION_VARIANT = Counter(
     "recommendations_variant_total",
     "Recommendation responses by A/B experiment variant",
     ["experiment", "variant"],
+)
+
+RECOMMENDATION_LATENCY = Histogram(
+    "recommendation_pipeline_seconds",
+    "Recommendation pipeline stage latency in seconds",
+    ["stage"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
 
 
@@ -34,6 +41,14 @@ class RecommendationResponse(BaseModel):
     model_version: str = "not-trained"
     variant: str | None = None
     experiment: str | None = None
+    latency_ms: float | None = None
+    timing: dict[str, float] | None = None
+
+
+def _record_timing(timing) -> None:
+    for stage, ms in timing.as_dict().items():
+        stage_name = stage.removesuffix("_ms")
+        RECOMMENDATION_LATENCY.labels(stage=stage_name).observe(ms / 1000)
 
 
 def _recommendations_for_user(
@@ -52,6 +67,7 @@ def _recommendations_for_user(
     variant: str | None = None
     experiment: str | None = None
     use_generative = serving.service is not None
+    timing = None
 
     if settings.enable_ab_test and serving.service is not None:
         experiment = EXPERIMENT_NAME
@@ -63,22 +79,39 @@ def _recommendations_for_user(
         RECOMMENDATION_VARIANT.labels(experiment=experiment, variant=variant).inc()
 
     if use_generative and serving.service is not None:
-        results = serving.service.recommend(db, user_id=user_id, k=k)
-        model_version = serving.service.model_version
-        if variant is None:
-            variant = "generative"
+        try:
+            results, timing = serving.service.recommend(db, user_id=user_id, k=k)
+            model_version = serving.service.model_version
+            if variant is None:
+                variant = "generative"
+        except Exception:
+            if not settings.enable_fallback_recs:
+                raise
+            results = popularity_recommendations(
+                db,
+                user_id=user_id,
+                k=k,
+                popularity_ranking=serving.popularity_ranking,
+                user_cache=serving.user_cache,
+            )
+            model_version = serving.model_version
+            variant = "popularity"
     elif settings.enable_fallback_recs:
         results = popularity_recommendations(
             db,
             user_id=user_id,
             k=k,
             popularity_ranking=serving.popularity_ranking,
+            user_cache=serving.user_cache,
         )
         model_version = serving.model_version
         if variant is None:
             variant = "popularity"
     else:
         raise HTTPException(status_code=503, detail="Model not loaded and fallback is disabled")
+
+    if timing is not None:
+        _record_timing(timing)
 
     return RecommendationResponse(
         user_id=user_id,
@@ -89,6 +122,8 @@ def _recommendations_for_user(
         model_version=model_version,
         variant=variant,
         experiment=experiment,
+        latency_ms=timing.total_ms if timing is not None else None,
+        timing=timing.as_dict() if timing is not None else None,
     )
 
 
