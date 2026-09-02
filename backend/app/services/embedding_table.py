@@ -63,6 +63,26 @@ class ItemEmbeddingTable:
         return index.reshape(np.asarray(item_ids).shape)
 
 
+def as_numpy_array(values) -> np.ndarray:
+    """Convert embedding table arrays to numpy (supports torch tensors)."""
+    if hasattr(values, "detach"):
+        return values.detach().cpu().numpy()
+    return np.asarray(values)
+
+
+def item_row_index(embedding_table, item_id: int) -> int:
+    """Return the embedding row index for an item id, or -1 if missing."""
+    try:
+        import torch
+
+        if isinstance(embedding_table.vectors, torch.Tensor):
+            index = embedding_table.indices_for(torch.tensor([item_id], dtype=torch.long))[0]
+            return int(index.item())
+    except ImportError:
+        pass
+    return int(embedding_table.indices_for(np.asarray([item_id], dtype=np.int64))[0])
+
+
 def parse_context(context) -> dict:
     if context is None:
         return {}
