@@ -29,4 +29,4 @@ npm run dev
 
 | Variable | Default |
 |---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` |
+| `API_URL` | `http://localhost:8000` |

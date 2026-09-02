@@ -12,7 +12,24 @@ import type {
   UserProfile,
 } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const LOCAL_API = "http://localhost:8000";
+
+function isBrowserLocalDev(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+/** Local dev hits the API directly; deployed builds use the same-origin /backend proxy. */
+export function getApiBase(): string {
+  if (isBrowserLocalDev()) {
+    return LOCAL_API;
+  }
+  return "/backend";
+}
+
+/** @deprecated Prefer getApiBase(). */
+export const API_BASE = LOCAL_API;
 
 class ApiError extends Error {
   constructor(
@@ -31,7 +48,7 @@ function getToken(): string | null {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBase()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -64,7 +81,7 @@ export function posterSrc(item: {
 }): string | null {
   if (item.poster_url) {
     if (item.poster_url.startsWith("http")) return item.poster_url;
-    return `${API_BASE}${item.poster_url}`;
+    return `${getApiBase()}${item.poster_url}`;
   }
   if (item.image_url) return item.image_url;
   return null;
@@ -171,4 +188,4 @@ export const api = {
     request<MovieStatus>(`/api/me/ratings/${item_id}`, { method: "DELETE" }),
 };
 
-export { ApiError, API_BASE, getToken };
+export { ApiError, getToken };
