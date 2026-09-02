@@ -2,21 +2,10 @@
 
 from datetime import UTC, datetime
 
-import pytest
-from app.db.session import SessionLocal
 from app.models.interaction import Interaction
 from app.models.item import Item
 from app.services.explanation_service import explain_recommendation_natural
 from app.services.library_service import load_library_history, load_user_library
-
-
-@pytest.fixture
-def db_session():
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
 
 
 def _add_item(session, item_id: int, title: str, genres: list[str]) -> None:
