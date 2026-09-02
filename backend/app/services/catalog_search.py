@@ -11,7 +11,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 from app.config import settings
-from app.services.embedding_table import ItemEmbeddingTable
+from app.services.embedding_table import ItemEmbeddingTable, as_numpy_array
 from app.services.faiss_index import load_faiss_index, search_index
 
 
@@ -67,8 +67,8 @@ def search_embedding_catalog(
     exclude_item_ids: set[int] | None = None,
 ) -> list[tuple[int, float]]:
     """Retrieve top-k items by cosine similarity (macOS-safe after torch)."""
-    vectors = embedding_table.vectors
-    item_ids = embedding_table.item_ids
+    vectors = as_numpy_array(embedding_table.vectors)
+    item_ids = as_numpy_array(embedding_table.item_ids).astype(np.int64)
     query = np.ascontiguousarray(query_vector.astype(np.float32).reshape(-1))
     norm = float(np.linalg.norm(query))
     if norm > 0:

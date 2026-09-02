@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from app.models.item import Item
 from app.models_ml.checkpoints import CONFIG_FILENAME, RANKER_MODEL_FILENAME
-from app.services.embedding_table import ItemEmbeddingTable
+from app.services.embedding_table import ItemEmbeddingTable, as_numpy_array, item_row_index
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -100,16 +100,16 @@ def avg_history_similarity(
 ) -> float:
     if not history:
         return 0.0
-    candidate_idx = int(embedding_table.indices_for([candidate_id])[0])
+    candidate_idx = item_row_index(embedding_table, candidate_id)
     if candidate_idx < 0:
         return 0.0
-    candidate_vec = embedding_table.vectors[candidate_idx]
+    candidate_vec = as_numpy_array(embedding_table.vectors[candidate_idx])
     similarities: list[float] = []
     for item_id in history:
-        hist_idx = int(embedding_table.indices_for([item_id])[0])
+        hist_idx = item_row_index(embedding_table, item_id)
         if hist_idx < 0:
             continue
-        hist_vec = embedding_table.vectors[hist_idx]
+        hist_vec = as_numpy_array(embedding_table.vectors[hist_idx])
         similarities.append(float(np.dot(candidate_vec, hist_vec)))
     return float(np.mean(similarities)) if similarities else 0.0
 
