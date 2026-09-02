@@ -14,16 +14,14 @@ from app.models.item import Item
 from app.models_ml.checkpoints import CONFIG_FILENAME
 from app.services.catalog_search import CatalogSearcher, try_load_catalog_searcher
 from app.services.ranking_service import RankingModel, try_load_ranking_model
-from app.services.sequence_cache import cache_paths, load_sequence_cache
-from app.services.sequence_dataset import (
+from app.services.embedding_table import (
     DEFAULT_MIN_RATING,
     MIN_INTERACTIONS,
     ItemEmbeddingTable,
     build_interaction_history,
     load_embedding_table,
 )
-from app.services.sequence_evaluation import build_popularity_ranking
-from app.services.sequence_inference import SequenceInference
+from app.services.sequence_cache import cache_paths, load_sequence_cache
 from app.services.user_cache import UserCache
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -381,6 +379,8 @@ def load_popularity_ranking(session: Session, embedding_table: ItemEmbeddingTabl
     cache_dir = Path(settings.sequences_cache_path)
     _, npz_path = cache_paths(cache_dir)
     if npz_path.is_file():
+        from app.services.sequence_evaluation import build_popularity_ranking
+
         sequences = load_sequence_cache(cache_dir)
         return build_popularity_ranking(sequences, embedding_table)
 
@@ -456,6 +456,8 @@ def load_recommendation_service(
     model_dir = model_dir or Path(settings.transformer_model_path)
     embedding_table = embedding_table or load_embedding_table(session)
     catalog_searcher = catalog_searcher or try_load_catalog_searcher(embedding_table)
+    from app.services.sequence_inference import SequenceInference
+
     popularity_ranking = popularity_ranking or load_popularity_ranking(session, embedding_table)
     inference = SequenceInference.from_model_dir(
         model_dir,

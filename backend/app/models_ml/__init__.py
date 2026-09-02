@@ -1,8 +1,1 @@
-from app.models_ml.contrastive_loss import infonce_loss
-from app.models_ml.sequence_transformer import SequenceTransformer, SequenceTransformerConfig
-
-__all__ = [
-    "SequenceTransformer",
-    "SequenceTransformerConfig",
-    "infonce_loss",
-]
+"""ML model definitions (import submodules directly to avoid loading torch at package import)."""

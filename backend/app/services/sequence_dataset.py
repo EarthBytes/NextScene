@@ -2,31 +2,55 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 
 import numpy as np
 import torch
-from app.models.item_embedding import EMBEDDING_DIM
-from app.services.faiss_index import load_embeddings_from_db
-from sqlalchemy import bindparam, text
-from sqlalchemy.orm import Session
+from app.services.embedding_table import (
+    DEFAULT_MIN_RATING,
+    MIN_INTERACTIONS,
+    PAD_ITEM_ID,
+    TRAIN_RATIO,
+    VAL_RATIO,
+    SequenceSample,
+    build_interaction_history,
+    build_user_sequences,
+    iter_interaction_rows,
+    load_embedded_item_ids,
+    load_embedding_table as load_numpy_embedding_table,
+    load_user_sequences,
+    parse_context,
+)
+from sqlalchemy import text
 from torch.utils.data import DataLoader, Dataset
 
-PAD_ITEM_ID = 0
-MIN_INTERACTIONS = 3
-DEFAULT_MIN_RATING = 3.5
-TRAIN_RATIO = 0.8
-VAL_RATIO = 0.1
-
-
-@dataclass(frozen=True)
-class SequenceSample:
-    user_id: int
-    input_item_ids: tuple[int, ...]
-    target_item_id: int
+__all__ = [
+    "DEFAULT_MIN_RATING",
+    "MIN_INTERACTIONS",
+    "PAD_ITEM_ID",
+    "TRAIN_RATIO",
+    "VAL_RATIO",
+    "ItemEmbeddingTable",
+    "SequenceSample",
+    "SequenceDataset",
+    "SampledWindowDataset",
+    "build_eval_samples",
+    "build_interaction_history",
+    "build_training_windows",
+    "build_user_sequences",
+    "create_dataloader",
+    "iter_interaction_rows",
+    "load_embedded_item_ids",
+    "load_embedding_table",
+    "load_sequences_for_user_subset",
+    "load_user_sequences",
+    "lookup_input_embeddings",
+    "parse_context",
+    "split_into_shards",
+    "split_user_ids",
+    "subsample_user_ids",
+]
 
 
 class ItemEmbeddingTable:
@@ -170,66 +194,6 @@ class SampledWindowDataset(Dataset):
         return _sample_to_batch_tensors(history, seq[target_index], self.max_seq_len)
 
 
-def parse_context(context) -> dict:
-    if context is None:
-        return {}
-    if isinstance(context, str):
-        return json.loads(context)
-    return dict(context)
-
-
-def build_interaction_history(
-    rows: Iterable[tuple[int, str, dict | str | None]],
-    *,
-    max_items: int = 50,
-    min_rating: float | None = DEFAULT_MIN_RATING,
-) -> list[int]:
-    history: list[int] = []
-    for item_id, interaction_type, context in rows:
-        if min_rating is not None and interaction_type == "rating":
-            parsed = parse_context(context)
-            rating = parsed.get("rating")
-            if rating is None or float(rating) < min_rating:
-                continue
-        if history and history[-1] == item_id:
-            continue
-        history.append(item_id)
-    return history[-max_items:]
-
-
-def build_user_sequences(
-    interactions: Iterable[tuple[int, int, str, dict | None]],
-    embedded_item_ids: set[int],
-    min_rating: float | None = DEFAULT_MIN_RATING,
-    min_interactions: int = MIN_INTERACTIONS,
-) -> dict[int, list[int]]:
-    """Group ordered interactions into per-user item sequences.
-
-    Interactions must already be sorted by (user_id, timestamp). Consecutive
-    duplicate items are dropped. Rating events below ``min_rating`` are skipped
-    when the threshold is set; tag/other events are kept.
-    """
-    sequences: dict[int, list[int]] = {}
-    for user_id, item_id, interaction_type, context in interactions:
-        if item_id not in embedded_item_ids:
-            continue
-        if min_rating is not None and interaction_type == "rating":
-            parsed = parse_context(context)
-            rating = parsed.get("rating")
-            if rating is None or float(rating) < min_rating:
-                continue
-        seq = sequences.setdefault(user_id, [])
-        if seq and seq[-1] == item_id:
-            continue
-        seq.append(item_id)
-
-    return {
-        user_id: seq
-        for user_id, seq in sequences.items()
-        if len(seq) >= min_interactions
-    }
-
-
 def split_user_ids(
     user_ids: Sequence[int],
     seed: int = 42,
@@ -338,75 +302,14 @@ def create_dataloader(
     )
 
 
-def load_embedding_table(session: Session) -> ItemEmbeddingTable:
-    item_ids, vectors = load_embeddings_from_db(session)
-    if vectors.shape[1] != EMBEDDING_DIM:
-        raise ValueError(f"Expected {EMBEDDING_DIM}-dim embeddings, got {vectors.shape[1]}")
-    return ItemEmbeddingTable(item_ids, vectors)
+def load_embedding_table(session):
+    numpy_table = load_numpy_embedding_table(session)
+    return ItemEmbeddingTable(numpy_table.item_ids, numpy_table.vectors)
 
-
-def load_embedded_item_ids(session: Session) -> set[int]:
-    rows = session.execute(
-        text(
-            """
-            SELECT item_id
-            FROM item_embeddings
-            WHERE vector IS NOT NULL
-            ORDER BY item_id
-            """
-        )
-    )
-    return {int(row.item_id) for row in rows}
-
-
-def iter_interaction_rows(
-    session: Session,
-    user_ids: Sequence[int] | None = None,
-) -> Iterable[tuple[int, int, str, dict]]:
-    if user_ids is None:
-        query = text(
-            """
-            SELECT user_id, item_id, type, context_json
-            FROM interactions
-            ORDER BY user_id, ts, interaction_id
-            """
-        )
-        rows = session.execute(query)
-    else:
-        if not user_ids:
-            return
-        query = (
-            text(
-                """
-                SELECT user_id, item_id, type, context_json
-                FROM interactions
-                WHERE user_id IN :user_ids
-                ORDER BY user_id, ts, interaction_id
-                """
-            ).bindparams(bindparam("user_ids", expanding=True))
-        )
-        rows = session.execute(query, {"user_ids": list(user_ids)})
-    for row in rows:
-        yield int(row.user_id), int(row.item_id), str(row.type), parse_context(row.context_json)
-
-
-def load_user_sequences(
-    session: Session,
-    embedded_item_ids: set[int],
-    min_rating: float | None = DEFAULT_MIN_RATING,
-    min_interactions: int = MIN_INTERACTIONS,
-    user_ids: Sequence[int] | None = None,
-) -> dict[int, list[int]]:
-    return build_user_sequences(
-        iter_interaction_rows(session, user_ids=user_ids),
-        embedded_item_ids=embedded_item_ids,
-        min_rating=min_rating,
-        min_interactions=min_interactions,
-    )
 
 
 def load_sequences_for_user_subset(
-    session: Session,
+    session,
     embedded_item_ids: set[int],
     max_users: int,
     seed: int,
