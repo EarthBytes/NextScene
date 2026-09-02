@@ -14,18 +14,17 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.item import Item
+from app.models_ml.checkpoints import CONFIG_FILENAME
 from app.services.catalog_search import CatalogSearcher, try_load_catalog_searcher
 from app.services.sequence_cache import cache_paths, load_sequence_cache
 from app.services.sequence_dataset import (
     DEFAULT_MIN_RATING,
     MIN_INTERACTIONS,
     ItemEmbeddingTable,
+    build_interaction_history,
     load_embedding_table,
 )
-from app.services.sequence_evaluation import (
-    CONFIG_FILENAME,
-    build_popularity_ranking,
-)
+from app.services.sequence_evaluation import build_popularity_ranking
 from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_inference import SequenceInference
 from app.services.user_cache import UserCache
@@ -56,6 +55,33 @@ class RecommendationTiming:
             "ranking_ms": round(self.ranking_ms, 2),
             "total_ms": round(self.total_ms, 2),
         }
+
+
+def filter_popularity_candidates(
+    popularity_ranking: list[int],
+    seen_items: set[int],
+    k: int,
+) -> list[tuple[int, float]]:
+    return [
+        (item_id, float(len(popularity_ranking) - index))
+        for index, item_id in enumerate(popularity_ranking)
+        if item_id not in seen_items
+    ][:k]
+
+
+def attach_titles(
+    session: Session,
+    candidates: list[tuple[int, float]],
+) -> list[Recommendation]:
+    if not candidates:
+        return []
+    item_ids = [item_id for item_id, _score in candidates]
+    rows = session.execute(select(Item.item_id, Item.title).where(Item.item_id.in_(item_ids))).all()
+    titles = {int(row.item_id): row.title for row in rows}
+    return [
+        Recommendation(item_id=item_id, title=titles.get(item_id), score=score)
+        for item_id, score in candidates
+    ]
 
 
 class RecommendationService:
@@ -129,7 +155,7 @@ class RecommendationService:
         else:
             candidates = candidates[:k]
 
-        results = self._attach_titles(session, candidates)
+        results = attach_titles(session, candidates)
         timing.total_ms = (time.perf_counter() - total_start) * 1000
         return results, timing
 
@@ -159,27 +185,8 @@ class RecommendationService:
     ) -> list[Recommendation]:
         if seen_items is None:
             seen_items = load_user_seen_items(session, user_id)
-        filtered = [
-            (item_id, float(len(self.popularity_ranking) - index))
-            for index, item_id in enumerate(self.popularity_ranking)
-            if item_id not in seen_items
-        ][:k]
-        return self._attach_titles(session, filtered)
-
-    def _attach_titles(
-        self,
-        session: Session,
-        candidates: list[tuple[int, float]],
-    ) -> list[Recommendation]:
-        if not candidates:
-            return []
-        item_ids = [item_id for item_id, _score in candidates]
-        rows = session.execute(select(Item.item_id, Item.title).where(Item.item_id.in_(item_ids))).all()
-        titles = {int(row.item_id): row.title for row in rows}
-        return [
-            Recommendation(item_id=item_id, title=titles.get(item_id), score=score)
-            for item_id, score in candidates
-        ]
+        filtered = filter_popularity_candidates(self.popularity_ranking, seen_items, k)
+        return attach_titles(session, filtered)
 
 
 def model_version_from_config(model_dir: Path) -> str:
@@ -248,21 +255,15 @@ def load_user_history(
         ),
         {"user_id": user_id},
     )
-    history: list[int] = []
-    for row in rows:
-        item_id = int(row.item_id)
-        interaction_type = str(row.type)
-        if min_rating is not None and interaction_type == "rating":
-            context = row.context_json or {}
-            if isinstance(context, str):
-                context = json.loads(context)
-            rating = context.get("rating")
-            if rating is None or float(rating) < min_rating:
-                continue
-        if history and history[-1] == item_id:
-            continue
-        history.append(item_id)
-    return history[-max_items:]
+    interaction_rows = (
+        (int(row.item_id), str(row.type), row.context_json)
+        for row in rows
+    )
+    return build_interaction_history(
+        interaction_rows,
+        max_items=max_items,
+        min_rating=min_rating,
+    )
 
 
 def load_recommendation_service(
@@ -271,17 +272,20 @@ def load_recommendation_service(
     model_dir: Path | None = None,
     inference_device: str = "cpu",
     user_cache: UserCache | None = None,
+    embedding_table: ItemEmbeddingTable | None = None,
+    catalog_searcher: CatalogSearcher | None = None,
+    popularity_ranking: list[int] | None = None,
 ) -> RecommendationService:
     """Load model, embeddings, and popularity data for serving."""
     model_dir = model_dir or Path(settings.transformer_model_path)
-    embedding_table = load_embedding_table(session)
-    catalog_searcher = try_load_catalog_searcher(embedding_table)
+    embedding_table = embedding_table or load_embedding_table(session)
+    catalog_searcher = catalog_searcher or try_load_catalog_searcher(embedding_table)
+    popularity_ranking = popularity_ranking or load_popularity_ranking(session, embedding_table)
     inference = SequenceInference.from_model_dir(
         model_dir,
         embedding_table,
         device=inference_device,
     )
-    popularity_ranking = load_popularity_ranking(session, embedding_table)
     ranker = None
     candidate_pool_size = settings.ranking_candidate_pool_size
     if settings.enable_ranking:
@@ -327,22 +331,29 @@ def try_load_serving_context(session: Session) -> ServingContext:
         max_size=settings.user_cache_max_size,
         ttl_seconds=settings.user_cache_ttl_seconds,
     )
+    embedding_table = load_embedding_table(session)
+    catalog_searcher = try_load_catalog_searcher(embedding_table)
+    popularity_ranking = load_popularity_ranking(session, embedding_table)
+
     try:
-        service = load_recommendation_service(session, user_cache=user_cache)
+        service = load_recommendation_service(
+            session,
+            user_cache=user_cache,
+            embedding_table=embedding_table,
+            catalog_searcher=catalog_searcher,
+            popularity_ranking=popularity_ranking,
+        )
         return ServingContext(
             service=service,
-            popularity_ranking=service.popularity_ranking,
+            popularity_ranking=popularity_ranking,
             model_version=service.model_version,
-            catalog_searcher=service.catalog_searcher,
+            catalog_searcher=catalog_searcher,
             user_cache=user_cache,
-            retrieval_mode=service.catalog_searcher.mode,
+            retrieval_mode=catalog_searcher.mode,
         )
     except FileNotFoundError:
         if not settings.enable_fallback_recs:
             raise
-        embedding_table = load_embedding_table(session)
-        catalog_searcher = try_load_catalog_searcher(embedding_table)
-        popularity_ranking = load_popularity_ranking(session, embedding_table)
         return ServingContext(
             service=None,
             popularity_ranking=popularity_ranking,
@@ -366,7 +377,6 @@ def warmup_serving_context(session: Session, serving: ServingContext) -> None:
             min_rating=serving.service.min_rating,
         )
         if len(history) >= serving.service.min_interactions:
-            serving.service.inference.predict_next_vector(history)
             query = serving.service.inference.predict_next_vector(history)
             if serving.catalog_searcher is not None:
                 serving.catalog_searcher.search(query, top_k=5)
@@ -393,17 +403,5 @@ def popularity_recommendations(
     else:
         seen_items = load_user_seen_items(session, user_id)
 
-    filtered = [
-        (item_id, float(len(popularity_ranking) - index))
-        for index, item_id in enumerate(popularity_ranking)
-        if item_id not in seen_items
-    ][:k]
-    if not filtered:
-        return []
-    item_ids = [item_id for item_id, _score in filtered]
-    rows = session.execute(select(Item.item_id, Item.title).where(Item.item_id.in_(item_ids))).all()
-    titles = {int(row.item_id): row.title for row in rows}
-    return [
-        Recommendation(item_id=item_id, title=titles.get(item_id), score=score)
-        for item_id, score in filtered
-    ]
+    filtered = filter_popularity_candidates(popularity_ranking, seen_items, k)
+    return attach_titles(session, filtered)

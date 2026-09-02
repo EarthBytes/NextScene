@@ -7,13 +7,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from app.ml_runtime import resolve_device, use_amp
+from app.models_ml.checkpoints import BEST_FILENAME
 from app.models_ml.sequence_transformer import SequenceTransformer
-from app.services.clip_embeddings import resolve_device
 from app.services.sequence_dataset import ItemEmbeddingTable, lookup_input_embeddings
 from app.services.sequence_evaluation import load_trained_model
-from app.services.sequence_training import _use_amp
-
-BEST_FILENAME = "best.pt"
 
 
 class SequenceInference:
@@ -64,7 +62,7 @@ class SequenceInference:
 
         batch = self._history_to_batch(history_item_ids)
         batch = {key: value.to(self.device) for key, value in batch.items()}
-        amp_enabled = _use_amp(self.device)
+        amp_enabled = use_amp(self.device)
         with torch.autocast(device_type=torch.device(self.device).type, enabled=amp_enabled):
             embeddings = lookup_input_embeddings(batch, self.embedding_table)
             predicted = self.model(embeddings, batch["input_mask"])

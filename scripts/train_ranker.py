@@ -1,29 +1,23 @@
 """Train a LightGBM ranker on transformer retrieval candidates."""
 
-import os
-
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 import argparse
-import sys
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import _bootstrap  # noqa: F401
 
 import app.ml_runtime  # noqa: F401
 
 import numpy as np
 import torch
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+
+from _common import require_database
 
 from app.config import settings
 from app.db.session import SessionLocal
-from app.services.clip_embeddings import resolve_device
+from app.ml_runtime import resolve_device, use_amp
+from app.models_ml.checkpoints import BEST_FILENAME
+from app.services.catalog_search import search_embedding_catalog
 from app.services.ranking_service import build_feature_matrix, load_item_features, train_ranking_model
-from app.services.recommendation_service import search_embedding_catalog
 from app.services.sequence_cache import load_sequence_cache
 from app.services.sequence_dataset import (
     build_eval_samples,
@@ -33,21 +27,10 @@ from app.services.sequence_dataset import (
     subsample_user_ids,
 )
 from app.services.sequence_evaluation import (
-    BEST_FILENAME,
     build_popularity_ranking,
     load_checkpoint_config,
     load_trained_model,
 )
-from app.services.sequence_training import _use_amp
-
-
-def check_database(session) -> None:
-    try:
-        session.execute(text("SELECT 1"))
-    except OperationalError:
-        print("Cannot connect to PostgreSQL on localhost:5432.")
-        print("Start Docker Desktop, then run: docker compose up -d postgres")
-        raise SystemExit(1)
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,7 +143,7 @@ def _predict_single(model, history, embedding_table, max_seq_len, device):
         mask[:length] = True
     batch = {"input_item_ids": padded.unsqueeze(0), "input_mask": mask.unsqueeze(0)}
     embeddings = lookup_input_embeddings(batch, embedding_table)
-    amp_enabled = _use_amp(device)
+    amp_enabled = use_amp(device)
     with torch.autocast(device_type=torch.device(device).type, enabled=amp_enabled):
         predicted = model(embeddings, batch["input_mask"]).float()
     return predicted[0].detach().cpu().numpy()
@@ -178,7 +161,7 @@ def main() -> None:
     device = resolve_device(args.device)
     session = SessionLocal()
     try:
-        check_database(session)
+        require_database(session)
         print(f"Generating training data (candidate pool={args.candidate_pool})...")
         train_x, train_y, val_x, val_y = generate_training_rows(
             session,

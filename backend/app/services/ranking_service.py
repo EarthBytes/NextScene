@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.item import Item
+from app.models_ml.checkpoints import CONFIG_FILENAME, RANKER_MODEL_FILENAME
 from app.services.sequence_dataset import ItemEmbeddingTable
 
 FEATURE_NAMES: tuple[str, ...] = (
@@ -26,8 +27,6 @@ FEATURE_NAMES: tuple[str, ...] = (
     "item_year_norm",
 )
 
-MODEL_FILENAME = "model.txt"
-CONFIG_FILENAME = "config.json"
 RECENT_HISTORY_WINDOW = 5
 YEAR_MIN = 1970
 YEAR_MAX = 2024
@@ -61,9 +60,9 @@ class RankingModelConfig:
     @classmethod
     def from_dict(cls, data: dict) -> RankingModelConfig:
         return cls(
-            feature_names=tuple(data.get("feature_names", FEATURE_NAMES)),
-            trained_at=str(data.get("trained_at", "")),
-            candidate_pool_size=int(data.get("candidate_pool_size", 50)),
+            feature_names=tuple(data.get("feature_names") or FEATURE_NAMES),
+            trained_at=str(data["trained_at"]),
+            candidate_pool_size=int(data["candidate_pool_size"]),
             train_samples=int(data.get("train_samples", 0)),
             val_auc=data.get("val_auc"),
             model_version=str(data.get("model_version", "ranker-v1")),
@@ -77,11 +76,11 @@ def normalize_year(year: int | None) -> float:
 
 
 def popularity_rank_norm(item_id: int, popularity_ranking: list[int]) -> float:
+    if not popularity_ranking:
+        return 0.0
     try:
         index = popularity_ranking.index(item_id)
     except ValueError:
-        return 0.0
-    if not popularity_ranking:
         return 0.0
     return 1.0 - (index / len(popularity_ranking))
 
@@ -247,7 +246,7 @@ class RankingModel:
 
     @classmethod
     def from_model_dir(cls, model_dir: Path) -> RankingModel:
-        model_path = model_dir / MODEL_FILENAME
+        model_path = model_dir / RANKER_MODEL_FILENAME
         config_path = model_dir / CONFIG_FILENAME
         if not model_path.is_file():
             raise FileNotFoundError(f"Missing ranking model: {model_path}")
@@ -263,11 +262,11 @@ class RankingModel:
     def save(self, model_dir: Path) -> None:
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / CONFIG_FILENAME).write_text(json.dumps(self.config.to_dict(), indent=2) + "\n")
-        self.booster.save_model(str(model_dir / MODEL_FILENAME))
+        self.booster.save_model(str(model_dir / RANKER_MODEL_FILENAME))
 
 
 def try_load_ranking_model(model_dir: Path) -> RankingModel | None:
-    model_path = model_dir / MODEL_FILENAME
+    model_path = model_dir / RANKER_MODEL_FILENAME
     if not model_path.is_file():
         return None
     return RankingModel.from_model_dir(model_dir)

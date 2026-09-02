@@ -11,6 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.ml_runtime import resolve_device
 from app.models.item import Item
 from app.models.item_embedding import EMBEDDING_DIM, ItemEmbedding
 from app.services.poster_download import existing_poster_item_ids, find_existing_poster
@@ -25,18 +26,6 @@ class ItemEmbeddingInput:
     item_id: int
     text: str
     poster_path: Path | None
-
-
-def resolve_device(device: str | None = None) -> str:
-    import torch
-
-    if device:
-        return device
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def default_batch_size(device: str) -> int:

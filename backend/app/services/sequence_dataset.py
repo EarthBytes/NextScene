@@ -171,12 +171,31 @@ class SampledWindowDataset(Dataset):
         return _sample_to_batch_tensors(history, seq[target_index], self.max_seq_len)
 
 
-def _parse_context(context) -> dict:
+def parse_context(context) -> dict:
     if context is None:
         return {}
     if isinstance(context, str):
         return json.loads(context)
     return dict(context)
+
+
+def build_interaction_history(
+    rows: Iterable[tuple[int, str, dict | str | None]],
+    *,
+    max_items: int = 50,
+    min_rating: float | None = DEFAULT_MIN_RATING,
+) -> list[int]:
+    history: list[int] = []
+    for item_id, interaction_type, context in rows:
+        if min_rating is not None and interaction_type == "rating":
+            parsed = parse_context(context)
+            rating = parsed.get("rating")
+            if rating is None or float(rating) < min_rating:
+                continue
+        if history and history[-1] == item_id:
+            continue
+        history.append(item_id)
+    return history[-max_items:]
 
 
 def build_user_sequences(
@@ -196,7 +215,7 @@ def build_user_sequences(
         if item_id not in embedded_item_ids:
             continue
         if min_rating is not None and interaction_type == "rating":
-            parsed = _parse_context(context)
+            parsed = parse_context(context)
             rating = parsed.get("rating")
             if rating is None or float(rating) < min_rating:
                 continue
@@ -369,22 +388,7 @@ def iter_interaction_rows(
         )
         rows = session.execute(query, {"user_ids": list(user_ids)})
     for row in rows:
-        yield int(row.user_id), int(row.item_id), str(row.type), _parse_context(row.context_json)
-
-
-def load_user_sequences_for_users(
-    session: Session,
-    user_ids: Sequence[int],
-    embedded_item_ids: set[int],
-    min_rating: float | None = DEFAULT_MIN_RATING,
-    min_interactions: int = MIN_INTERACTIONS,
-) -> dict[int, list[int]]:
-    return build_user_sequences(
-        iter_interaction_rows(session, user_ids=user_ids),
-        embedded_item_ids=embedded_item_ids,
-        min_rating=min_rating,
-        min_interactions=min_interactions,
-    )
+        yield int(row.user_id), int(row.item_id), str(row.type), parse_context(row.context_json)
 
 
 def load_user_sequences(
@@ -422,12 +426,12 @@ def load_sequences_for_user_subset(
     sequences: dict[int, list[int]] = {}
     for start in range(0, len(candidate_ids), batch_size):
         batch = candidate_ids[start : start + batch_size]
-        batch_sequences = load_user_sequences_for_users(
+        batch_sequences = load_user_sequences(
             session,
-            batch,
             embedded_item_ids=embedded_item_ids,
             min_rating=min_rating,
             min_interactions=min_interactions,
+            user_ids=batch,
         )
         sequences.update(batch_sequences)
         if len(sequences) >= max_users:

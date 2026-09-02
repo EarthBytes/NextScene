@@ -1,15 +1,11 @@
 """Generate fused CLIP embeddings for items and store in item_embeddings."""
 
 import argparse
-import sys
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import _bootstrap  # noqa: F401
 
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from _common import require_database
 
 from app.config import settings
 from app.db.session import SessionLocal
@@ -21,15 +17,6 @@ from app.services.clip_embeddings import (
     resolve_device,
     run_clip_embedding_generation,
 )
-
-
-def check_database(session) -> None:
-    try:
-        session.execute(text("SELECT 1"))
-    except OperationalError:
-        print("Cannot connect to PostgreSQL on localhost:5432.")
-        print("Start Docker Desktop, then run: docker compose up -d postgres")
-        raise SystemExit(1)
 
 
 def main() -> int:
@@ -78,7 +65,7 @@ def main() -> int:
 
     session = SessionLocal()
     try:
-        check_database(session)
+        require_database(session)
         print(
             f"Generating CLIP embeddings "
             f"(model={args.model}, device={resolved_device}, "

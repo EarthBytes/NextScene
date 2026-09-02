@@ -1,28 +1,14 @@
 """Load MovieLens 20M ratings, movies, and tags into PostgreSQL."""
 
 import argparse
-import sys
 from pathlib import Path
 
-# Allow running as `python scripts/ingest_movielens.py` from repo root.
-BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import _bootstrap  # noqa: F401
 
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from _common import require_database
 
 from app.db.session import SessionLocal
 from app.services.movielens_ingest import run_ingestion
-
-
-def check_database(session) -> None:
-    try:
-        session.execute(text("SELECT 1"))
-    except OperationalError:
-        print("Cannot connect to PostgreSQL on localhost:5432.")
-        print("Start Docker Desktop, then run: docker compose up -d postgres")
-        raise SystemExit(1)
 
 
 def main() -> int:
@@ -67,7 +53,7 @@ def main() -> int:
     print(f"Ingesting from {args.data_dir.resolve()} ...")
     session = SessionLocal()
     try:
-        check_database(session)
+        require_database(session)
         counts = run_ingestion(
             session,
             args.data_dir,

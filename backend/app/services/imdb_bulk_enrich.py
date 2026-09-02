@@ -12,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.item import Item
+from app.utils.text import parse_delimited_genres
 
 IMDB_DOWNLOAD_BASE = "https://datasets.imdbws.com"
 
@@ -31,9 +32,7 @@ def load_imdb_ids(session: Session) -> set[str]:
 
 
 def parse_imdb_genres(genres: str | None) -> list[str] | None:
-    if not genres or genres == "\\N":
-        return None
-    return [g.strip() for g in genres.split(",") if g.strip()]
+    return parse_delimited_genres(genres, ",", null_sentinels=frozenset({"\\N"}))
 
 
 def enrich_from_title_basics(session: Session, path: Path, imdb_ids: set[str]) -> int:

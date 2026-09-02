@@ -10,35 +10,34 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.item import Item
+from app.services.metadata_utils import (
+    apply_item_metadata,
+    clean_api_string,
+    count_items_missing_metadata,
+)
 
 TMDB_API_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
-
-
-def _clean(value: str | None) -> str | None:
-    if not value or not str(value).strip():
-        return None
-    return str(value).strip()
 
 
 def parse_tmdb_movie(data: dict[str, Any]) -> dict[str, Any] | None:
     if not data or data.get("success") is False:
         return None
 
-    overview = _clean(data.get("overview"))
-    poster_path = _clean(data.get("poster_path"))
+    overview = clean_api_string(data.get("overview"), null_values=frozenset())
+    poster_path = clean_api_string(data.get("poster_path"), null_values=frozenset())
     image_url = f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else None
 
     metadata: dict[str, Any] = {}
-    if _clean(data.get("tagline")):
+    if clean_api_string(data.get("tagline"), null_values=frozenset()):
         metadata["tagline"] = data["tagline"]
-    if _clean(data.get("release_date")):
+    if clean_api_string(data.get("release_date"), null_values=frozenset()):
         metadata["release_date"] = data["release_date"]
     if data.get("vote_average") is not None:
         metadata["tmdb_vote_average"] = data["vote_average"]
     if data.get("vote_count") is not None:
         metadata["tmdb_vote_count"] = data["vote_count"]
-    if _clean(data.get("original_language")):
+    if clean_api_string(data.get("original_language"), null_values=frozenset()):
         metadata["original_language"] = data["original_language"]
 
     genres = data.get("genres")
@@ -94,18 +93,7 @@ def items_needing_tmdb(session: Session, limit: int, force: bool = False) -> lis
 
 
 def apply_tmdb_metadata(item: Item, metadata: dict[str, Any]) -> None:
-    if metadata.get("description"):
-        item.description = metadata["description"]
-    if metadata.get("image_url"):
-        item.image_url = metadata["image_url"]
-    if metadata.get("genres") and not item.genres:
-        item.genres = metadata["genres"]
-
-    patch = metadata.get("metadata_json", {})
-    if patch:
-        current = dict(item.metadata_json or {})
-        current.update(patch)
-        item.metadata_json = current
+    apply_item_metadata(item, metadata, overwrite_genres=False)
 
 
 def fetch_tmdb_movie(
@@ -124,16 +112,10 @@ def fetch_tmdb_movie(
 
 
 def count_remaining(session: Session) -> int:
-    return session.execute(
-        text(
-            """
-            SELECT COUNT(*)
-            FROM items
-            WHERE metadata_json ? 'tmdb_id'
-              AND (description IS NULL OR image_url IS NULL)
-            """
-        )
-    ).scalar_one()
+    return count_items_missing_metadata(
+        session,
+        "metadata_json ? 'tmdb_id' AND (description IS NULL OR image_url IS NULL)",
+    )
 
 
 def run_tmdb_fetch(

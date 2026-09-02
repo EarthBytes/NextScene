@@ -1,41 +1,14 @@
 """Fetch IMDb metadata via OMDb API and enrich items table."""
 
 import argparse
-import sys
-from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import _bootstrap  # noqa: F401
 
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from _common import require_database
 
 from app.config import settings
 from app.db.session import SessionLocal
-from app.services.omdb_metadata import run_metadata_fetch
-
-
-def check_database(session) -> None:
-    try:
-        session.execute(text("SELECT 1"))
-    except OperationalError:
-        print("Cannot connect to PostgreSQL on localhost:5432.")
-        print("Start Docker Desktop, then run: docker compose up -d postgres")
-        raise SystemExit(1)
-
-
-def count_remaining(session) -> int:
-    return session.execute(
-        text(
-            """
-            SELECT COUNT(*)
-            FROM items
-            WHERE imdb_id IS NOT NULL
-              AND (description IS NULL OR image_url IS NULL)
-            """
-        )
-    ).scalar_one()
+from app.services.omdb_metadata import count_remaining, run_metadata_fetch
 
 
 def main() -> int:
@@ -66,7 +39,7 @@ def main() -> int:
 
     session = SessionLocal()
     try:
-        check_database(session)
+        require_database(session)
         print(f"Fetching OMDb metadata (limit={args.limit}) ...")
         counts = run_metadata_fetch(
             session,
