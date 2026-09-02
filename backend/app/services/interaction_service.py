@@ -49,5 +49,6 @@ def log_interaction(
 
     if user_cache is not None:
         user_cache.invalidate(user_id)
+        user_cache.invalidate(1_000_000_000 + user_id)
 
     return interaction
