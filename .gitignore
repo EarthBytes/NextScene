@@ -53,6 +53,4 @@ logs/
 reports
 
 # MD Files
-README.md
-DATASET.md
-PLAN.md
+docs/
