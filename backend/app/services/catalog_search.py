@@ -11,8 +11,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 from app.config import settings
-from app.services.faiss_index import load_faiss_index, search_index
 from app.services.embedding_table import ItemEmbeddingTable
+from app.services.faiss_index import load_faiss_index, search_index
 
 
 @dataclass(frozen=True)
