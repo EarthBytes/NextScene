@@ -23,6 +23,7 @@ from app.services.sequence_evaluation import (
     CONFIG_FILENAME,
     build_popularity_ranking,
 )
+from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_inference import SequenceInference
 
 
@@ -67,6 +68,8 @@ class RecommendationService:
         popularity_ranking: list[int],
         model_version: str,
         *,
+        ranker: RankingModel | None = None,
+        candidate_pool_size: int = 50,
         min_interactions: int = MIN_INTERACTIONS,
         min_rating: float | None = DEFAULT_MIN_RATING,
     ) -> None:
@@ -74,6 +77,8 @@ class RecommendationService:
         self.embedding_table = embedding_table
         self.popularity_ranking = popularity_ranking
         self.model_version = model_version
+        self.ranker = ranker
+        self.candidate_pool_size = candidate_pool_size
         self.min_interactions = min_interactions
         self.min_rating = min_rating
 
@@ -89,12 +94,24 @@ class RecommendationService:
 
         predicted = self.inference.predict_next_vector(history)
         seen_items = load_user_seen_items(session, user_id)
+        pool_size = self.candidate_pool_size if self.ranker is not None else k
         candidates = search_embedding_catalog(
             self.embedding_table,
             predicted,
-            top_k=k,
+            top_k=pool_size,
             exclude_item_ids=seen_items,
         )
+        if self.ranker is not None:
+            candidates = self.ranker.rerank(
+                session,
+                history,
+                candidates,
+                self.popularity_ranking,
+                self.embedding_table,
+                top_k=k,
+            )
+        else:
+            candidates = candidates[:k]
         return self._attach_titles(session, candidates)
 
     def _popularity_recommendations(
@@ -225,11 +242,24 @@ def load_recommendation_service(
         device=inference_device,
     )
     popularity_ranking = load_popularity_ranking(session, embedding_table)
+    ranker = None
+    candidate_pool_size = settings.ranking_candidate_pool_size
+    if settings.enable_ranking:
+        ranker = try_load_ranking_model(Path(settings.ranking_model_path))
+        if ranker is not None:
+            candidate_pool_size = ranker.candidate_pool_size
+
+    model_version = model_version_from_config(model_dir)
+    if ranker is not None:
+        model_version = f"{model_version}+{ranker.model_version}"
+
     return RecommendationService(
         inference=inference,
         embedding_table=embedding_table,
         popularity_ranking=popularity_ranking,
-        model_version=model_version_from_config(model_dir),
+        model_version=model_version,
+        ranker=ranker,
+        candidate_pool_size=candidate_pool_size,
     )
 
 

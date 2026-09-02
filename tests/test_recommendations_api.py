@@ -36,6 +36,35 @@ def test_get_recommendations_returns_model_results(client_with_mock_service):
     assert payload["recommendations"][0]["title"] == "Test Movie"
 
 
+def test_get_recommendations_ab_test_force_variant(client_with_mock_service, monkeypatch):
+    from app.config import settings
+    from app.services.recommendation_service import Recommendation
+
+    monkeypatch.setattr(settings, "enable_ab_test", True)
+    monkeypatch.setattr(
+        "app.api.recommendations.popularity_recommendations",
+        lambda *_args, **_kwargs: [Recommendation(item_id=7, title="Popular", score=1.0)],
+    )
+
+    response = client_with_mock_service.get(
+        "/api/recommendations",
+        params={"user_id": 123, "k": 2, "variant": "popularity"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["variant"] == "popularity"
+    assert payload["experiment"] == "generative_vs_popularity"
+    assert payload["recommendations"][0]["item_id"] == 7
+
+
+def test_get_recommendations_validates_variant(client_with_mock_service):
+    response = client_with_mock_service.get(
+        "/api/recommendations",
+        params={"user_id": 1, "k": 2, "variant": "invalid"},
+    )
+    assert response.status_code == 400
+
+
 def test_get_recommendations_validates_k(client_with_mock_service):
     response = client_with_mock_service.get("/api/recommendations", params={"user_id": 1, "k": 0})
     assert response.status_code == 400

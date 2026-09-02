@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     tmdb_api_key: str = ""
     transformer_model_path: str = "models/transformer-full-v2"
     ranking_model_path: str = "models/ranking"
+    enable_ranking: bool = True
+    ranking_candidate_pool_size: int = 50
+    enable_ab_test: bool = False
+    ab_test_generative_fraction: float = 0.5
     faiss_index_path: str = "data/faiss/items.index"
     sequences_cache_path: str = "data/sequences"
     posters_dir: str = "data/posters"

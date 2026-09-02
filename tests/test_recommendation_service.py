@@ -96,6 +96,65 @@ def test_search_embedding_catalog_excludes_seen_items():
     assert [item_id for item_id, _score in top] == [3, 4]
 
 
+def test_recommend_uses_candidate_pool_when_ranker_present():
+    class HistoryRow:
+        def __init__(self, item_id, type_, context_json):
+            self.item_id = item_id
+            self.type = type_
+            self.context_json = context_json
+
+    class SeenRow:
+        def __init__(self, item_id):
+            self.item_id = item_id
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def all(self):
+            return self._rows
+
+    history_rows = [HistoryRow(item_id, "rating", {"rating": 4.0}) for item_id in range(1, 6)]
+    seen_rows = [SeenRow(item_id) for item_id in range(1, 6)]
+
+    class FakeSession:
+        def execute(self, statement, *_args, **_kwargs):
+            sql = str(statement)
+            if "DISTINCT item_id" in sql:
+                return FakeResult(seen_rows)
+            if "items.item_id" in sql:
+                return FakeResult([])
+            return FakeResult(history_rows)
+
+    item_ids = np.array([100, 101, 102, 103, 104], dtype=np.int64)
+    vectors = np.eye(5, dtype=np.float32)
+    table = ItemEmbeddingTable(item_ids=item_ids, vectors=vectors)
+    inference = MagicMock()
+    inference.max_seq_len = 50
+    inference.predict_next_vector.return_value = np.array([1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    ranker = MagicMock()
+    ranker.candidate_pool_size = 3
+    ranker.rerank.return_value = [(100, 0.95), (101, 0.90)]
+
+    service = RecommendationService(
+        inference=inference,
+        embedding_table=table,
+        popularity_ranking=[100, 101],
+        model_version="test",
+        ranker=ranker,
+        candidate_pool_size=3,
+        min_interactions=3,
+    )
+
+    results = service.recommend(FakeSession(), user_id=500, k=2)
+    ranker.rerank.assert_called_once()
+    assert len(results) == 2
+
+
 def test_recommend_excludes_items_outside_sequence_window():
     class HistoryRow:
         def __init__(self, item_id, type_, context_json):
