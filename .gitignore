@@ -38,8 +38,8 @@ data/faiss/
 .DS_Store
 Thumbs.db
 
-# Models & artifacts
-models/
+# Models & artifacts (repo-root ML checkpoints only; not backend/app/models ORM package)
+/models/
 checkpoints/
 *.pt
 *.pth
