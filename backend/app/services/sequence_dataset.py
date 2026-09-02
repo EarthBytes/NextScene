@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -18,9 +18,11 @@ from app.services.embedding_table import (
     build_user_sequences,
     iter_interaction_rows,
     load_embedded_item_ids,
-    load_embedding_table as load_numpy_embedding_table,
     load_user_sequences,
     parse_context,
+)
+from app.services.embedding_table import (
+    load_embedding_table as load_numpy_embedding_table,
 )
 from sqlalchemy import text
 from torch.utils.data import DataLoader, Dataset
@@ -32,9 +34,9 @@ __all__ = [
     "TRAIN_RATIO",
     "VAL_RATIO",
     "ItemEmbeddingTable",
-    "SequenceSample",
-    "SequenceDataset",
     "SampledWindowDataset",
+    "SequenceDataset",
+    "SequenceSample",
     "build_eval_samples",
     "build_interaction_history",
     "build_training_windows",

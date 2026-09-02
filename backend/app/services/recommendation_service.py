@@ -8,12 +8,12 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.models.item import Item
 from app.models_ml.checkpoints import CONFIG_FILENAME
 from app.services.catalog_search import CatalogSearcher, try_load_catalog_searcher
-from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.embedding_table import (
     DEFAULT_MIN_RATING,
     MIN_INTERACTIONS,
@@ -21,10 +21,14 @@ from app.services.embedding_table import (
     build_interaction_history,
     load_embedding_table,
 )
+from app.services.ranking_service import RankingModel, try_load_ranking_model
 from app.services.sequence_cache import cache_paths, load_sequence_cache
 from app.services.user_cache import UserCache
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from app.services.sequence_inference import SequenceInference
 
 logger = logging.getLogger(__name__)
 
