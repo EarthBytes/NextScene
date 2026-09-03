@@ -101,7 +101,10 @@ export function HomePage() {
 
         {recommendations.isError ? (
           <div className="mx-4 rounded-xl border border-red-900 bg-red-950/30 p-6 text-sm text-red-300 sm:mx-8">
-            Could not load recommendations. Make sure the backend is running.
+            Could not load recommendations.
+            {recommendations.error instanceof Error && recommendations.error.message
+              ? ` ${recommendations.error.message}`
+              : " Check that the backend is running and you have at least 3 movies in your library."}
           </div>
         ) : null}
 
