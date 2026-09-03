@@ -96,8 +96,9 @@ if [ "${DOWNLOAD_FAILED:-0}" -eq 1 ]; then
   exit 1
 fi
 
-mkdir -p "$(dirname "$MODEL_DIR")"
-tar -xzf /tmp/serving-artifacts.tar.gz -C /app
+EXTRACT_ROOT="$(dirname "$MODEL_DIR")"
+mkdir -p "$EXTRACT_ROOT"
+tar -xzf /tmp/serving-artifacts.tar.gz -C "$EXTRACT_ROOT"
 rm -f /tmp/serving-artifacts.tar.gz
 
 if [ ! -f "$CHECKPOINT" ]; then
