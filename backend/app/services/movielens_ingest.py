@@ -58,8 +58,14 @@ def clear_ingested_data(session: Session) -> None:
     session.commit()
 
 
-def ingest_movies(session: Session, movies_path: Path) -> int:
+def ingest_movies(
+    session: Session,
+    movies_path: Path,
+    item_ids: frozenset[int] | set[int] | None = None,
+) -> int:
     df = pd.read_csv(movies_path)
+    if item_ids is not None:
+        df = df[df["movieId"].isin(item_ids)]
     rows = [
         {
             "item_id": int(row.movieId),
@@ -83,8 +89,14 @@ def ingest_movies(session: Session, movies_path: Path) -> int:
     return len(rows)
 
 
-def ingest_links(session: Session, links_path: Path) -> int:
+def ingest_links(
+    session: Session,
+    links_path: Path,
+    item_ids: frozenset[int] | set[int] | None = None,
+) -> int:
     df = pd.read_csv(links_path)
+    if item_ids is not None:
+        df = df[df["movieId"].isin(item_ids)]
     updated = 0
     for row in df.itertuples(index=False):
         if pd.isna(row.imdbId):
