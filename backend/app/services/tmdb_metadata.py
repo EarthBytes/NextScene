@@ -124,13 +124,26 @@ def run_tmdb_fetch(
     force: bool = False,
     delay_seconds: float = 0.26,
     max_retries: int = 3,
+    commit_every: int = 50,
 ) -> dict[str, int]:
     fetch_limit = limit if limit is not None else 10_000_000
     items = items_needing_tmdb(session, limit=fetch_limit, force=force)
     counts = {"queued": len(items), "updated": 0, "not_found": 0, "failed": 0}
+    total = len(items)
 
+    if total == 0:
+        return counts
+
+    estimated_min = (total * delay_seconds) / 60
+    print(
+        f"  queued {total:,} movies (~{estimated_min:.0f} min at {delay_seconds}s/request, "
+        f"commits every {commit_every})",
+        flush=True,
+    )
+
+    dirty = 0
     with httpx.Client(timeout=30.0) as client:
-        for item in items:
+        for index, item in enumerate(items, start=1):
             tmdb_id = get_tmdb_id(item)
             if tmdb_id is None:
                 counts["failed"] += 1
@@ -162,10 +175,24 @@ def run_tmdb_fetch(
                 counts["not_found"] += 1
             else:
                 apply_tmdb_metadata(item, metadata)
-                session.commit()
                 counts["updated"] += 1
+                dirty += 1
+
+            if dirty >= commit_every:
+                session.commit()
+                dirty = 0
+
+            if index % 100 == 0 or index == total:
+                print(
+                    f"  progress: {index:,}/{total:,} "
+                    f"(updated={counts['updated']:,}, failed={counts['failed']:,})",
+                    flush=True,
+                )
 
             if delay_seconds > 0:
                 time.sleep(delay_seconds)
+
+    if dirty:
+        session.commit()
 
     return counts

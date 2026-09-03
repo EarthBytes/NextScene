@@ -35,6 +35,12 @@ def main() -> int:
         default=0.26,
         help="Seconds between requests (~4/sec, under TMDb rate limits)",
     )
+    parser.add_argument(
+        "--commit-every",
+        type=int,
+        default=50,
+        help="Commit DB updates every N movies (higher = faster over remote DB)",
+    )
     args = parser.parse_args()
 
     api_key = resolve_tmdb_api_key()
@@ -49,13 +55,15 @@ def main() -> int:
     session = SessionLocal()
     try:
         require_database(session)
-        print("Fetching TMDb metadata ...")
+        remaining_before = count_remaining(session)
+        print(f"Fetching TMDb metadata ({remaining_before:,} movies missing posters/plots) ...")
         counts = run_tmdb_fetch(
             session,
             api_key=api_key,
             limit=args.limit,
             force=args.force,
             delay_seconds=args.delay,
+            commit_every=args.commit_every,
         )
         remaining = count_remaining(session)
     finally:
