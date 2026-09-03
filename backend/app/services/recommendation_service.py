@@ -482,23 +482,26 @@ def load_recommendation_service(
     session: Session,
     *,
     model_dir: Path | None = None,
-    inference_device: str = "cpu",
+    inference_device: str | None = None,
     user_cache: UserCache | None = None,
     embedding_table: ItemEmbeddingTable | None = None,
     catalog_searcher: CatalogSearcher | None = None,
     popularity_ranking: list[int] | None = None,
 ) -> RecommendationService:
     """Load model, embeddings, and popularity data for serving."""
-    model_dir = model_dir or Path(settings.transformer_model_path)
-    embedding_table = embedding_table or load_embedding_table(session)
-    catalog_searcher = catalog_searcher or try_load_catalog_searcher(embedding_table)
+    from app.services.sequence_dataset import load_embedding_table as load_torch_embedding_table
     from app.services.sequence_inference import SequenceInference
 
+    model_dir = model_dir or Path(settings.transformer_model_path)
+    embedding_table = embedding_table or load_torch_embedding_table(session)
+    catalog_searcher = catalog_searcher or try_load_catalog_searcher(embedding_table)
+
     popularity_ranking = popularity_ranking or load_popularity_ranking(session, embedding_table)
+    device = inference_device or settings.inference_device
     inference = SequenceInference.from_model_dir(
         model_dir,
         embedding_table,
-        device=inference_device,
+        device=device,
     )
     ranker = None
     candidate_pool_size = settings.ranking_candidate_pool_size
@@ -545,22 +548,58 @@ def try_load_serving_context(session: Session) -> ServingContext:
         max_size=settings.user_cache_max_size,
         ttl_seconds=settings.user_cache_ttl_seconds,
     )
-    embedding_table: ItemEmbeddingTable | None = None
-    catalog_searcher: CatalogSearcher | None = None
 
     try:
-        embedding_table = load_embedding_table(session)
-        catalog_searcher = try_load_catalog_searcher(embedding_table)
-        popularity_ranking = load_popularity_ranking(session, embedding_table)
+        import torch  # noqa: F401
+        from app.services.sequence_dataset import load_embedding_table as load_torch_embedding_table
+
+        embedding_table = load_torch_embedding_table(session)
+        use_torch = True
+    except ImportError:
+        use_torch = False
+        try:
+            embedding_table = load_embedding_table(session)
+        except ValueError as exc:
+            if "No embeddings found" not in str(exc):
+                raise
+            logger.warning("No item embeddings in database; using popularity fallback only")
+            popularity_ranking = load_popularity_ranking_from_interactions(session)
+            return ServingContext(
+                service=None,
+                popularity_ranking=popularity_ranking,
+                model_version="popularity-fallback",
+                catalog_searcher=None,
+                user_cache=user_cache,
+                retrieval_mode="none",
+            )
     except ValueError as exc:
         if "No embeddings found" not in str(exc):
             raise
         logger.warning("No item embeddings in database; using popularity fallback only")
         popularity_ranking = load_popularity_ranking_from_interactions(session)
+        return ServingContext(
+            service=None,
+            popularity_ranking=popularity_ranking,
+            model_version="popularity-fallback",
+            catalog_searcher=None,
+            user_cache=user_cache,
+            retrieval_mode="none",
+        )
+
+    catalog_searcher = try_load_catalog_searcher(embedding_table)
+    popularity_ranking = load_popularity_ranking(session, embedding_table)
+
+    if not use_torch:
+        return ServingContext(
+            service=None,
+            popularity_ranking=popularity_ranking,
+            model_version="popularity-fallback",
+            catalog_searcher=catalog_searcher,
+            user_cache=user_cache,
+            retrieval_mode=catalog_searcher.mode,
+        )
 
     try:
-        if embedding_table is None:
-            raise FileNotFoundError(settings.transformer_model_path)
         service = load_recommendation_service(
             session,
             user_cache=user_cache,
@@ -574,7 +613,7 @@ def try_load_serving_context(session: Session) -> ServingContext:
             model_version=service.model_version,
             catalog_searcher=catalog_searcher,
             user_cache=user_cache,
-            retrieval_mode=catalog_searcher.mode if catalog_searcher is not None else "numpy",
+            retrieval_mode=catalog_searcher.mode,
         )
     except FileNotFoundError:
         if not settings.enable_fallback_recs:
@@ -585,7 +624,7 @@ def try_load_serving_context(session: Session) -> ServingContext:
             model_version="popularity-fallback",
             catalog_searcher=catalog_searcher,
             user_cache=user_cache,
-            retrieval_mode=catalog_searcher.mode if catalog_searcher is not None else "none",
+            retrieval_mode=catalog_searcher.mode,
         )
 
 

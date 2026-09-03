@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     omdb_api_key: str = ""
     tmdb_api_key: str = ""
     transformer_model_path: str = "models/transformer-full-v2"
+    serving_artifact_url: str = ""
+    inference_device: str = "cpu"
     ranking_model_path: str = "models/ranking"
     enable_ranking: bool = True
     ranking_candidate_pool_size: int = 50
