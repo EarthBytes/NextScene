@@ -403,6 +403,38 @@ def load_popularity_ranking(session: Session, embedding_table: ItemEmbeddingTabl
     return [int(row.item_id) for row in rows if int(row.item_id) in embedded]
 
 
+def load_popularity_ranking_from_interactions(session: Session, limit: int = 500) -> list[int]:
+    """Popularity fallback when CLIP embeddings are not loaded (e.g. free-tier deploy)."""
+    rows = session.execute(
+        text(
+            """
+            SELECT item_id
+            FROM interactions
+            GROUP BY item_id
+            ORDER BY COUNT(*) DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": limit},
+    )
+    ranking = [int(row.item_id) for row in rows]
+    if ranking:
+        return ranking
+
+    rows = session.execute(
+        text(
+            """
+            SELECT item_id
+            FROM items
+            ORDER BY item_id
+            LIMIT :limit
+            """
+        ),
+        {"limit": limit},
+    )
+    return [int(row.item_id) for row in rows]
+
+
 def load_user_seen_items(session: Session, user_id: int) -> set[int]:
     """All distinct items the user has interacted with (for recommendation filtering)."""
     rows = session.execute(
@@ -513,11 +545,22 @@ def try_load_serving_context(session: Session) -> ServingContext:
         max_size=settings.user_cache_max_size,
         ttl_seconds=settings.user_cache_ttl_seconds,
     )
-    embedding_table = load_embedding_table(session)
-    catalog_searcher = try_load_catalog_searcher(embedding_table)
-    popularity_ranking = load_popularity_ranking(session, embedding_table)
+    embedding_table: ItemEmbeddingTable | None = None
+    catalog_searcher: CatalogSearcher | None = None
 
     try:
+        embedding_table = load_embedding_table(session)
+        catalog_searcher = try_load_catalog_searcher(embedding_table)
+        popularity_ranking = load_popularity_ranking(session, embedding_table)
+    except ValueError as exc:
+        if "No embeddings found" not in str(exc):
+            raise
+        logger.warning("No item embeddings in database; using popularity fallback only")
+        popularity_ranking = load_popularity_ranking_from_interactions(session)
+
+    try:
+        if embedding_table is None:
+            raise FileNotFoundError(settings.transformer_model_path)
         service = load_recommendation_service(
             session,
             user_cache=user_cache,
@@ -531,7 +574,7 @@ def try_load_serving_context(session: Session) -> ServingContext:
             model_version=service.model_version,
             catalog_searcher=catalog_searcher,
             user_cache=user_cache,
-            retrieval_mode=catalog_searcher.mode,
+            retrieval_mode=catalog_searcher.mode if catalog_searcher is not None else "numpy",
         )
     except FileNotFoundError:
         if not settings.enable_fallback_recs:
@@ -542,7 +585,7 @@ def try_load_serving_context(session: Session) -> ServingContext:
             model_version="popularity-fallback",
             catalog_searcher=catalog_searcher,
             user_cache=user_cache,
-            retrieval_mode=catalog_searcher.mode,
+            retrieval_mode=catalog_searcher.mode if catalog_searcher is not None else "none",
         )
 
 
