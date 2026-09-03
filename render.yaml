@@ -39,5 +39,11 @@ services:
         value: "false"
       - key: SERVING_ARTIFACT_URL
         sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_RELEASE_TAG
+        value: serving-v1
+      - key: GITHUB_REPO
+        value: EarthBytes/Generative-Recommendation-System
       - key: CORS_ORIGINS
         sync: false
