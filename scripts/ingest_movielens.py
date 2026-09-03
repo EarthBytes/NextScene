@@ -22,8 +22,8 @@ def main() -> int:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=50_000,
-        help="Rows per batch for ratings/tags interaction inserts",
+        default=10_000,
+        help="Rows per batch for ratings/tags inserts (max ~13,107 for PostgreSQL)",
     )
     parser.add_argument(
         "--clear",

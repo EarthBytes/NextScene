@@ -1,6 +1,7 @@
 """Fetch plot and poster metadata from TMDb."""
 
 import argparse
+import os
 
 import _bootstrap  # noqa: F401
 
@@ -9,6 +10,10 @@ from _common import require_database
 from app.config import settings
 from app.db.session import SessionLocal
 from app.services.tmdb_metadata import count_remaining, run_tmdb_fetch
+
+
+def resolve_tmdb_api_key() -> str:
+    return (settings.tmdb_api_key or os.getenv("TMDB_API_KEY") or "").strip()
 
 
 def main() -> int:
@@ -32,9 +37,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    api_key = settings.tmdb_api_key
+    api_key = resolve_tmdb_api_key()
     if not api_key:
-        print("Set TMDB_API_KEY in .env. Get a key at https://www.themoviedb.org/settings/api")
+        print("TMDB_API_KEY is missing or empty.")
+        print("Add it to the repo-root .env file (not frontend/.env.local).")
+        print("If you already set it, check for duplicate TMDB_API_KEY= lines;")
+        print("an empty one at the bottom overrides the real key.")
+        print("Get a key at https://www.themoviedb.org/settings/api")
         return 1
 
     session = SessionLocal()

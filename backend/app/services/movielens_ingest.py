@@ -15,6 +15,22 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+# PostgreSQL rejects statements with more than 65,535 bind parameters.
+_INTERACTION_FIELDS_PER_ROW = 5
+MAX_INTERACTION_BATCH_SIZE = 65_535 // _INTERACTION_FIELDS_PER_ROW
+
+
+def clamp_interaction_batch_size(batch_size: int) -> int:
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    if batch_size > MAX_INTERACTION_BATCH_SIZE:
+        print(
+            f"Warning: batch_size {batch_size:,} exceeds PostgreSQL limit; "
+            f"using {MAX_INTERACTION_BATCH_SIZE:,} instead."
+        )
+        return MAX_INTERACTION_BATCH_SIZE
+    return batch_size
+
 
 def format_imdb_id(imdb_id: str | int) -> str:
     raw = str(imdb_id).strip()
@@ -146,7 +162,9 @@ def ingest_interactions_from_csv(
     batch_size: int,
     context_fn,
 ) -> int:
+    batch_size = clamp_interaction_batch_size(batch_size)
     total = 0
+    print(f"  ingesting {interaction_type} interactions from {csv_path.name} ...")
     for chunk in pd.read_csv(csv_path, chunksize=batch_size):
         rows = []
         for row in chunk.itertuples(index=False):
@@ -163,6 +181,7 @@ def ingest_interactions_from_csv(
         session.execute(insert(Interaction).values(rows))
         session.commit()
         total += len(rows)
+        print(f"    {interaction_type}: {total:,} rows", flush=True)
 
     return total
 
@@ -190,7 +209,7 @@ def ingest_ratings(session: Session, ratings_path: Path, batch_size: int) -> int
 def run_ingestion(
     session: Session,
     data_dir: Path,
-    batch_size: int = 50_000,
+    batch_size: int = 10_000,
     clear: bool = False,
     skip_ratings: bool = False,
 ) -> dict[str, int]:
@@ -204,13 +223,21 @@ def run_ingestion(
 
     counts: dict[str, int] = {}
 
+    print("  loading movies ...", flush=True)
     counts["items"] = ingest_movies(session, movies_path)
+    print(f"    movies: {counts['items']:,}", flush=True)
 
     if links_path.exists():
+        print("  updating imdb/tmdb links (row-by-row, slow over remote DB) ...", flush=True)
         counts["links_updated"] = ingest_links(session, links_path)
+        print(f"    links updated: {counts['links_updated']:,}", flush=True)
 
+    print("  aggregating tags per movie ...", flush=True)
     tags_by_movie = aggregate_tags_by_movie(tags_path)
+    print(f"    movies with tags: {len(tags_by_movie):,}", flush=True)
+    print("  enriching items with aggregated tags (row-by-row, slow over remote DB) ...", flush=True)
     counts["items_tag_enriched"] = enrich_items_with_tags(session, tags_by_movie)
+    print(f"    items tag-enriched: {counts['items_tag_enriched']:,}", flush=True)
     counts["tag_interactions"] = ingest_tags(session, tags_path, batch_size)
 
     if ratings_path.exists() and not skip_ratings:

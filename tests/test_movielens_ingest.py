@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 from app.db.session import SessionLocal
-from app.services.movielens_ingest import format_imdb_id, parse_genres, run_ingestion
+from app.services.movielens_ingest import (
+    clamp_interaction_batch_size,
+    format_imdb_id,
+    parse_genres,
+    run_ingestion,
+)
 from sqlalchemy import text
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "movielens"
@@ -17,6 +22,11 @@ def test_format_imdb_id():
 def test_parse_genres():
     assert parse_genres("Adventure|Comedy") == ["Adventure", "Comedy"]
     assert parse_genres("(no genres listed)") is None
+
+
+def test_clamp_interaction_batch_size():
+    assert clamp_interaction_batch_size(10_000) == 10_000
+    assert clamp_interaction_batch_size(50_000) == 13_107
 
 
 @pytest.fixture
