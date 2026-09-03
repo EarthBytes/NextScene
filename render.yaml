@@ -29,5 +29,15 @@ services:
         value: INFO
       - key: PYTHONPATH
         value: /app/backend
+      - key: TRANSFORMER_MODEL_PATH
+        value: models/transformer-full-v2
+      - key: INFERENCE_DEVICE
+        value: cpu
+      - key: ENABLE_RANKING
+        value: "false"
+      - key: WARMUP_ON_STARTUP
+        value: "false"
+      - key: SERVING_ARTIFACT_URL
+        sync: false
       - key: CORS_ORIGINS
         sync: false
