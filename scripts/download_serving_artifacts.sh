@@ -15,8 +15,18 @@ if [ -z "${SERVING_ARTIFACT_URL:-}" ]; then
   exit 0
 fi
 
-echo "Downloading serving artifacts from SERVING_ARTIFACT_URL ..."
-curl -fsSL "$SERVING_ARTIFACT_URL" -o /tmp/serving-artifacts.tar.gz
+echo "Downloading serving artifacts ..."
+CURL_AUTH=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  CURL_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream")
+fi
+
+if ! curl -fsSL "${CURL_AUTH[@]}" "$SERVING_ARTIFACT_URL" -o /tmp/serving-artifacts.tar.gz; then
+  echo "Failed to download serving artifacts (HTTP error)." >&2
+  echo "If the GitHub repo is private, set GITHUB_TOKEN on Render with read access to releases." >&2
+  echo "Or host serving-artifacts.tar.gz at a public HTTPS URL and point SERVING_ARTIFACT_URL there." >&2
+  exit 1
+fi
 mkdir -p "$(dirname "$MODEL_DIR")"
 tar -xzf /tmp/serving-artifacts.tar.gz -C /app
 rm -f /tmp/serving-artifacts.tar.gz
