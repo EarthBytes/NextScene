@@ -16,12 +16,20 @@ if [ -z "${SERVING_ARTIFACT_URL:-}" ]; then
 fi
 
 echo "Downloading serving artifacts ..."
-CURL_AUTH=()
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-  CURL_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream")
+  if ! curl -fsSL \
+    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+    -H "Accept: application/octet-stream" \
+    "$SERVING_ARTIFACT_URL" -o /tmp/serving-artifacts.tar.gz; then
+    DOWNLOAD_FAILED=1
+  fi
+else
+  if ! curl -fsSL "$SERVING_ARTIFACT_URL" -o /tmp/serving-artifacts.tar.gz; then
+    DOWNLOAD_FAILED=1
+  fi
 fi
 
-if ! curl -fsSL "${CURL_AUTH[@]}" "$SERVING_ARTIFACT_URL" -o /tmp/serving-artifacts.tar.gz; then
+if [ "${DOWNLOAD_FAILED:-0}" -eq 1 ]; then
   echo "Failed to download serving artifacts (HTTP error)." >&2
   echo "If the GitHub repo is private, set GITHUB_TOKEN on Render with read access to releases." >&2
   echo "Or host serving-artifacts.tar.gz at a public HTTPS URL and point SERVING_ARTIFACT_URL there." >&2
